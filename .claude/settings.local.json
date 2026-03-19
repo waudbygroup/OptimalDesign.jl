@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(julia -e 'using Pkg; Pkg.activate\\(\"\".\"\"\\); Pkg.add\\(\"\"LogExpFunctions\"\"\\); Pkg.resolve\\(\\)')"
+    ]
+  }
+}
