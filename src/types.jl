@@ -26,8 +26,8 @@ struct DCriterion <: DesignCriterion end
 struct ACriterion <: DesignCriterion end
 struct ECriterion <: DesignCriterion end
 
-(::DCriterion)(M::AbstractMatrix) = logdet(M)
-(::ACriterion)(M::AbstractMatrix) = -tr(inv(M))
+(::DCriterion)(M::AbstractMatrix) = logdet(Symmetric(M))
+(::ACriterion)(M::AbstractMatrix) = -tr(inv(Symmetric(M)))
 (::ECriterion)(M::AbstractMatrix) = eigmin(Symmetric(M))
 
 # --- DesignProblem ---

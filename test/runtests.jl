@@ -8,6 +8,10 @@ using Random
 
 Random.seed!(42)
 
+# Resolve name conflicts with Distributions.jl
+const od_sample = OptimalDesign.sample
+const od_loglikelihood = OptimalDesign.loglikelihood
+
 @testset "OptimalDesign.jl" begin
 
     @testset "draw" begin
@@ -95,7 +99,8 @@ Random.seed!(42)
         M = information(prob, θ, ξ)
         @test size(M) == (2, 2)
         @test issymmetric(M) || M ≈ M'
-        @test all(eigvals(Symmetric(M)) .>= 0)
+        # Rank 1 from single scalar observation — one eigenvalue is zero (up to float)
+        @test all(eigvals(Symmetric(M)) .>= -1e-10)
 
         # Verify FIM by hand:
         # y = A * exp(-R₂*t)
@@ -138,6 +143,7 @@ Random.seed!(42)
     end
 
     @testset "DeltaMethod transformation" begin
+        # Use a full-rank FIM by summing over multiple design points
         prob = DesignProblem(
             (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
             parameters = (A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
@@ -146,9 +152,11 @@ Random.seed!(42)
         )
 
         θ = ComponentArray(A=1.0, R₂=10.0)
-        ξ = (t=0.1,)
 
-        M = information(prob, θ, ξ)
+        # Sum FIM over two well-separated time points for full rank
+        M = information(prob, θ, (t=0.05,)) + information(prob, θ, (t=0.2,))
+        @test isposdef(Symmetric(M))
+
         Mt = transform(prob, M, θ)
 
         # Transformed matrix should be 1×1 for single parameter of interest
@@ -177,8 +185,8 @@ Random.seed!(42)
         @test μ isa ComponentArray
         @test abs(μ.A - 1.0) < 0.1  # prior mean of A is 1.0
 
-        # Sample
-        s = sample(post, 10)
+        # Sample (qualified to avoid conflict with Distributions.sample)
+        s = od_sample(post, 10)
         @test length(s) == 10
     end
 
@@ -194,12 +202,12 @@ Random.seed!(42)
         ŷ = prob.predict(θ, ξ)
 
         # Perfect observation: highest likelihood
-        ll_perfect = loglikelihood(prob, θ, ξ, ŷ)
-        ll_noisy = loglikelihood(prob, θ, ξ, ŷ + 0.1)
+        ll_perfect = od_loglikelihood(prob, θ, ξ, ŷ)
+        ll_noisy = od_loglikelihood(prob, θ, ξ, ŷ + 0.1)
         @test ll_perfect > ll_noisy
 
         # Structured observation
-        ll_struct = loglikelihood(prob, θ, ξ, (value=ŷ, σ=0.05))
+        ll_struct = od_loglikelihood(prob, θ, ξ, (value=ŷ, σ=0.05))
         @test ll_struct ≈ ll_perfect
     end
 
@@ -217,18 +225,16 @@ Random.seed!(42)
 
         update!(post, prob, ξ, y)
 
-        # Weights should no longer be uniform
-        # (they might be uniform again if resampling triggered, but
-        #  the posterior mean should have shifted)
         μ = posterior_mean(post)
         @test μ isa ComponentArray
     end
 
     @testset "expected_utility" begin
+        # Use vector observation so single-point FIM is full rank (2 obs, 2 params)
         prob = DesignProblem(
-            (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+            (θ, ξ) -> [θ.A * exp(-θ.R₂ * ξ.t), θ.A * exp(-θ.R₂ * ξ.t * 2)],
             parameters = (A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma = (θ, ξ) -> 0.05,
+            sigma = (θ, ξ) -> [0.05, 0.05],
         )
 
         particles = draw(prob.parameters, 100)
@@ -242,6 +248,15 @@ Random.seed!(42)
         scores = score_candidates(prob, DCriterion(), particles, candidates; batch_size=50)
         @test length(scores) == 20
         @test all(isfinite, scores)
+
+        # Scalar observation (rank-deficient FIM) — should not error
+        prob_scalar = DesignProblem(
+            (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+            parameters = (A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
+            sigma = (θ, ξ) -> 0.05,
+        )
+        u_scalar = expected_utility(prob_scalar, DCriterion(), particles, ξ; batch_size=50)
+        @test !isnan(u_scalar)
     end
 
     @testset "Example 3: Vector observation" begin

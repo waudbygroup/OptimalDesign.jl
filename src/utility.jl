@@ -15,11 +15,14 @@ function expected_utility(prob::DesignProblem, criterion::DesignCriterion, parti
     for i in idx
         θ = particles[i]
         M = information(prob, θ, ξ)
-        # Apply transformation if needed
         Mt = transform(prob, M, θ)
-        # Check that the matrix is usable (positive definite)
-        if isposdef(Symmetric(Mt))
-            total += criterion(Mt)
+        val = try
+            criterion(Mt)
+        catch
+            nothing
+        end
+        if val !== nothing && isfinite(val)
+            total += val
             count += 1
         end
     end
