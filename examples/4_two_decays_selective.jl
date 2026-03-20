@@ -24,11 +24,11 @@ prob = DesignProblem(
     else
         θ.A₂ * exp(-θ.R₂₂ * ξ.t)
     end,
-    parameters = (A₁=Normal(1, 0.1), R₂₁=LogUniform(1, 50),
-                  A₂=Normal(1, 0.1), R₂₂=LogUniform(1, 50)),
-    transformation = select(:R₂₁, :R₂₂),
-    sigma = (θ, ξ) -> 0.05,
-    cost = (prev, ξ) -> ξ.t + 0.1,
+    parameters=(A₁=Normal(1, 0.1), R₂₁=LogUniform(1, 50),
+        A₂=Normal(1, 0.1), R₂₂=LogUniform(1, 50)),
+    transformation=select(:R₂₁, :R₂₂),
+    sigma=(θ, ξ) -> 0.05,
+    cost=(prev, ξ) -> ξ.t + 0.1,
 )
 
 candidates = [
@@ -62,7 +62,7 @@ println("\nCombined FIM rank: ", rank(M_combined))
 prior = ParticlePosterior(prob, 500)
 
 println("\nScoring all candidates (both decays, all times)...")
-scores = score_candidates(prob, DCriterion(), prior.particles, candidates; batch_size=100)
+scores = score_candidates(prob, DCriterion(), prior.particles, candidates; posterior_samples=100)
 
 ranking = sortperm(scores, rev=true)
 println("\nTop 10 design points:")

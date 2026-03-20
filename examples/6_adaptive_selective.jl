@@ -29,11 +29,11 @@ end
 
 prob = DesignProblem(
     (θ, ξ) -> ξ.i == 1 ? θ.A₁ * exp(-θ.R₂₁ * ξ.t) : θ.A₂ * exp(-θ.R₂₂ * ξ.t),
-    parameters = (A₁=Normal(1, 0.1), R₂₁=LogUniform(1, 50),
-                  A₂=Normal(1, 0.1), R₂₂=LogUniform(1, 50)),
-    transformation = select(:R₂₁, :R₂₂),
-    sigma = (θ, ξ) -> 0.05,
-    cost = (prev, ξ) -> begin
+    parameters=(A₁=Normal(1, 0.1), R₂₁=LogUniform(1, 50),
+        A₂=Normal(1, 0.1), R₂₂=LogUniform(1, 50)),
+    transformation=select(:R₂₁, :R₂₂),
+    sigma=(θ, ξ) -> 0.05,
+    cost=(prev, ξ) -> begin
         t_measure = ξ.t + 0.1
         t_switch = (prev !== nothing && prev.i != ξ.i) ? 1.0 : 0.0
         t_measure + t_switch
@@ -59,7 +59,7 @@ while spent < budget
     step += 1
 
     # Score candidates
-    scores = score_candidates(prob, DCriterion(), posterior.particles, candidates; batch_size=100)
+    scores = score_candidates(prob, DCriterion(), posterior.particles, candidates; posterior_samples=100)
 
     # Adjust for cost (including switching)
     cost_adjusted = [

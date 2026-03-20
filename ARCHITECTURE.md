@@ -225,13 +225,13 @@ $$U(\xi) = \mathbb{E}_{\theta \sim \pi}\left[\Phi\!\left(M_\tau(\xi, \theta)\rig
 Evaluated by Monte Carlo over posterior samples, with mini-batch support:
 
 ```julia
-function expected_utility(prob, criterion, particles, ξ; batch_size=50)
-    idx = rand(1:length(particles), batch_size)
+function expected_utility(prob, criterion, particles, ξ; posterior_samples=50)
+    idx = rand(1:length(particles), posterior_samples)
     mean(criterion(transform(prob, information(prob, particles[i], ξ))) for i in idx)
 end
 ```
 
-Mini-batch evaluation is stochastic but unbiased. It reduces cost per candidate by a factor of `length(particles) / batch_size` at the expense of noise in the ranking.
+Mini-batch evaluation is stochastic but unbiased. It reduces cost per candidate by a factor of `length(particles) / posterior_samples` at the expense of noise in the ranking.
 
 
 ### Expected Information Gain (EIG)
@@ -283,7 +283,7 @@ function select(
     n = 1,
     criterion = DCriterion(),
     budget = Inf,
-    batch_size = 50,
+    posterior_samples = 50,
     ξ_prev = nothing,
 )
     # Returns: Vector{Tuple{NamedTuple, Int}} — (ξ, count) pairs
@@ -352,7 +352,7 @@ function run_experiment(
     acquire;                    # callable: ξ -> y
     budget,
     criterion = DCriterion(),
-    batch_size = 50,
+    posterior_samples = 50,
     n_per_step = 1,
     headless = false,           # suppress GUI for testing
     prediction_grid = nothing,  # dense ξ grid for credible band plots

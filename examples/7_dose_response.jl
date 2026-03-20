@@ -19,9 +19,9 @@ Random.seed!(42)
 
 prob = DesignProblem(
     (θ, ξ) -> θ.E0 + θ.Emax * ξ.dose^θ.h / (θ.ED50^θ.h + ξ.dose^θ.h),
-    parameters = (E0=Normal(1, 0.5), Emax=Normal(2, 0.5),
-                  ED50=LogNormal(-1, 0.5), h=LogNormal(1, 0.5)),
-    cost = (prev, ξ) -> 1.0,
+    parameters=(E0=Normal(1, 0.5), Emax=Normal(2, 0.5),
+        ED50=LogNormal(-1, 0.5), h=LogNormal(1, 0.5)),
+    cost=(prev, ξ) -> 1.0,
 )
 
 candidates = [(dose=d,) for d in range(0.01, 1.0, length=50)]
@@ -44,7 +44,7 @@ end
 prior = ParticlePosterior(prob, 500)
 
 println("\nScoring dose levels by D-optimality...")
-scores = score_candidates(prob, DCriterion(), prior.particles, candidates; batch_size=100)
+scores = score_candidates(prob, DCriterion(), prior.particles, candidates; posterior_samples=100)
 
 ranking = sortperm(scores, rev=true)
 println("\nTop 10 dose levels:")

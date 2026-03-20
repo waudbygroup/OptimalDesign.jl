@@ -19,12 +19,12 @@ Random.seed!(42)
 
 prob = DesignProblem(
     (θ, ξ) -> [θ.A₁ * exp(-θ.R₂₁ * ξ.t),
-               θ.A₂ * exp(-θ.R₂₂ * ξ.t)],
-    parameters = (A₁=Normal(1, 0.1), R₂₁=LogUniform(1, 50),
-                  A₂=Normal(1, 0.1), R₂₂=LogUniform(1, 50)),
-    transformation = select(:R₂₁, :R₂₂),
-    sigma = (θ, ξ) -> [0.05, 0.05],
-    cost = (prev, ξ) -> ξ.t + 0.1,
+        θ.A₂ * exp(-θ.R₂₂ * ξ.t)],
+    parameters=(A₁=Normal(1, 0.1), R₂₁=LogUniform(1, 50),
+        A₂=Normal(1, 0.1), R₂₂=LogUniform(1, 50)),
+    transformation=select(:R₂₁, :R₂₂),
+    sigma=(θ, ξ) -> [0.05, 0.05],
+    cost=(prev, ξ) -> ξ.t + 0.1,
 )
 
 candidates = [(t=t,) for t in range(0.001, 0.5, length=200)]
@@ -49,7 +49,7 @@ println("Eigenvalues: ", round.(eigvals(Symmetric(M)), digits=4))
 prior = ParticlePosterior(prob, 500)
 
 println("\nScoring candidates...")
-scores = score_candidates(prob, DCriterion(), prior.particles, candidates; batch_size=100)
+scores = score_candidates(prob, DCriterion(), prior.particles, candidates; posterior_samples=100)
 
 ranking = sortperm(scores, rev=true)
 println("\nTop 10 design points (simultaneous observation):")
