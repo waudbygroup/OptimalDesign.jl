@@ -52,6 +52,93 @@ function information(prob::DesignProblem, θ, ξ)
 end
 
 """
+    GradientCache(p)
+
+Pre-allocated buffers for repeated `information!` calls.
+Avoids creating a new GradientConfig on every ForwardDiff.gradient! call.
+"""
+struct GradientCache
+    g_buf::Vector{Float64}
+    cfg::ForwardDiff.GradientConfig
+end
+
+function GradientCache(θ::AbstractVector, predict, ξ)
+    p = length(θ)
+    g_buf = zeros(p)
+    f = θ_ -> predict(θ_, ξ)
+    cfg = ForwardDiff.GradientConfig(f, θ)
+    GradientCache(g_buf, cfg)
+end
+
+"""
+    information!(M, prob, θ, ξ; cache=nothing)
+
+In-place version: compute the FIM and write result into pre-allocated matrix M.
+Accepts an optional `GradientCache` to avoid allocating ForwardDiff config each call.
+"""
+function information!(M::AbstractMatrix, prob::DesignProblem, θ, ξ;
+                      cache::Union{Nothing, GradientCache}=nothing)
+    p = size(M, 1)
+
+    if prob.jacobian === nothing
+        y = prob.predict(θ, ξ)
+        if y isa Real
+            # Scalar observation: gradient into buffer, then outer product
+            f = θ_ -> prob.predict(θ_, ξ)
+            if cache !== nothing
+                ForwardDiff.gradient!(cache.g_buf, f, θ, cache.cfg, Val{false}())
+                g = cache.g_buf
+            else
+                g = ForwardDiff.gradient(f, θ)
+            end
+            σ = prob.sigma(θ, ξ)
+            σ² = σ^2
+            @inbounds for j in 1:p, i in 1:p
+                M[i, j] = g[i] * g[j] / σ²
+            end
+        else
+            J = ForwardDiff.jacobian(θ_ -> prob.predict(θ_, ξ), θ)
+            σ = prob.sigma(θ, ξ)
+            weighted_fim!(M, J, σ)
+        end
+    else
+        J = prob.jacobian(θ, ξ)
+        σ = prob.sigma(θ, ξ)
+        weighted_fim!(M, J, σ)
+    end
+    M
+end
+
+"""
+    weighted_fim!(M, J, σ)
+
+In-place computation of J'Σ⁻¹J, writing result into M.
+"""
+function weighted_fim!(M::AbstractMatrix, J::AbstractMatrix, σ::Real)
+    σ² = σ^2
+    mul!(M, J', J)
+    M ./= σ²
+    M
+end
+
+function weighted_fim!(M::AbstractMatrix, J::AbstractMatrix, σ::AbstractVector)
+    p = size(J, 2)
+    n = size(J, 1)
+    fill!(M, 0.0)
+    @inbounds for i in 1:n
+        inv_σ² = 1 / σ[i]^2
+        for c in 1:p, r in 1:p
+            M[r, c] += J[i, r] * J[i, c] * inv_σ²
+        end
+    end
+    M
+end
+
+function weighted_fim!(M::AbstractMatrix, J::AbstractVector, σ)
+    weighted_fim!(M, reshape(J, 1, length(J)), σ)
+end
+
+"""
     transform(prob, M)
 
 Apply the transformation to the information matrix.

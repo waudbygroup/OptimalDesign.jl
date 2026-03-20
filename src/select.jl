@@ -80,13 +80,21 @@ function _select_greedy(
     # M_cache[ji][k] = information(prob, particles[idx[ji]], candidates[k])
     @debug "Precomputing FIM cache: $(length(idx)) particles × $K candidates"
     M_cache = Vector{Vector{Matrix{Float64}}}(undef, length(idx))
+    M_buf = zeros(p, p)
     for ji in eachindex(idx)
         θ = particles[idx[ji]]
-        M_cache[ji] = [information(prob, θ, candidates[k]) for k in 1:K]
+        cache = GradientCache(θ, prob.predict, first(candidates))
+        M_cache[ji] = Vector{Matrix{Float64}}(undef, K)
+        for k in 1:K
+            information!(M_buf, prob, θ, candidates[k]; cache=cache)
+            M_cache[ji][k] = copy(M_buf)
+        end
     end
 
     # Running FIM per particle: accumulates information from already-selected points
     M_running = [zeros(p, p) for _ in idx]
+
+    M_trial = zeros(p, p)
 
     for step in 1:n
         # Score each candidate by E[Φ(M_running + M_k)] / cost
@@ -100,8 +108,11 @@ function _select_greedy(
             total = 0.0
             count = 0
             for (ji, j) in enumerate(idx)
-                M_new = M_running[ji] + M_cache[ji][k]
-                Mt = transform(prob, M_new, particles[j])
+                # M_trial = M_running[ji] + M_cache[ji][k] (no allocation)
+                @inbounds for col in 1:p, row in 1:p
+                    M_trial[row, col] = M_running[ji][row, col] + M_cache[ji][k][row, col]
+                end
+                Mt = transform(prob, M_trial, particles[j])
                 val = safe_criterion(criterion, Mt)
                 if isfinite(val)
                     total += val

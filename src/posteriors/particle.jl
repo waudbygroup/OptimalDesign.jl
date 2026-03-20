@@ -95,12 +95,16 @@ function _loglikelihood_gaussian(y::AbstractVector, ŷ::Real, σ)
 end
 
 """
-    update!(posterior::ParticlePosterior, prob::DesignProblem, ξ, y; ess_threshold=0.5)
+    update!(posterior::ParticlePosterior, prob::DesignProblem, ξ, y; ess_threshold=0.5, a=0.98)
 
 Incorporate observation y at design point ξ by reweighting particles.
-Triggers systematic resampling with kernel jittering when ESS drops below threshold.
+Triggers systematic resampling with Liu-West kernel jittering when ESS drops below threshold.
+
+The shrinkage parameter `a` (default 0.98) controls the Liu-West kernel:
+larger values mean less jitter, preserving particle locations more faithfully.
 """
-function update!(posterior::ParticlePosterior, prob::DesignProblem, ξ, y; ess_threshold::Float64=0.5)
+function update!(posterior::ParticlePosterior, prob::DesignProblem, ξ, y;
+                 ess_threshold::Float64=0.5, a::Float64=0.98)
     n = length(posterior.particles)
     for i in 1:n
         ll = loglikelihood(prob, posterior.particles[i], ξ, y)
@@ -113,7 +117,7 @@ function update!(posterior::ParticlePosterior, prob::DesignProblem, ξ, y; ess_t
     # Check ESS and resample if needed
     ess = effective_sample_size(posterior)
     if ess < ess_threshold * n
-        resample!(posterior)
+        resample!(posterior; prob=prob, a=a)
     end
     posterior
 end
@@ -138,30 +142,120 @@ function systematic_resample(weights::AbstractVector, n::Int)
     indices
 end
 
-"""
-    resample!(posterior::ParticlePosterior; jitter_scale=0.01)
+# --- Parameter transforms for bound-respecting jitter ---
 
-Systematic resampling with optional kernel jittering to prevent particle impoverishment.
 """
-function resample!(posterior::ParticlePosterior; jitter_scale::Float64=0.01)
+    _param_transforms(parameters::NamedTuple)
+
+Derive (forward, inverse) transform pairs from prior distributions.
+Forward maps to unconstrained space; inverse maps back.
+"""
+function _param_transforms(parameters::NamedTuple)
+    map(parameters) do dist
+        sup = support(dist)
+        lo = minimum(sup)
+        hi = maximum(sup)
+        if lo == -Inf && hi == Inf
+            # Unbounded (e.g., Normal)
+            (forward=identity, inverse=identity)
+        elseif isfinite(lo) && hi == Inf
+            # Lower-bounded (e.g., LogUniform, Exponential)
+            (forward=x -> log(x - lo + eps()), inverse=z -> lo + exp(z))
+        elseif lo == -Inf && isfinite(hi)
+            # Upper-bounded (rare)
+            (forward=x -> -log(hi - x + eps()), inverse=z -> hi - exp(-z))
+        else
+            # Bounded [lo, hi] (e.g., Uniform, Beta)
+            (forward=x -> log((x - lo + eps()) / (hi - x + eps())),
+             inverse=z -> lo + (hi - lo) / (1 + exp(-z)))
+        end
+    end
+end
+
+"""
+    resample!(posterior; prob=nothing, a=0.98)
+
+Systematic resampling with Liu-West kernel jittering.
+
+The Liu-West filter shrinks each resampled particle toward the ensemble mean
+and adds correlated noise, calibrated to preserve the posterior's first two moments.
+When `prob` is provided, jittering operates in a transformed (unconstrained) space
+derived from the prior bounds, preventing particles from leaving the support.
+
+# Arguments
+- `prob`: DesignProblem (optional). Provides prior distributions for bound-aware transforms.
+- `a`: shrinkage parameter (default 0.98). Controls jitter magnitude: h² = 1 - a².
+"""
+function resample!(posterior::ParticlePosterior; prob::Union{DesignProblem,Nothing}=nothing, a::Float64=0.98)
     n = length(posterior.particles)
+    d = length(first(posterior.particles))
     w = exp.(posterior.log_weights .- logsumexp(posterior.log_weights))
     indices = systematic_resample(w, n)
 
     new_particles = posterior.particles[indices]
 
-    # Kernel jittering: add small Gaussian noise proportional to weighted std
-    if jitter_scale > 0
-        # Compute weighted standard deviation per component
-        μ = sum(w[i] * posterior.particles[i] for i in 1:n)
-        var_est = sum(w[i] * (posterior.particles[i] .- μ) .^ 2 for i in 1:n)
-        σ_jitter = jitter_scale .* sqrt.(max.(var_est, 1e-20))
-        for i in 1:n
-            new_particles[i] = new_particles[i] .+ σ_jitter .* randn(length(σ_jitter))
+    # Liu-West kernel: shrink + correlated noise preserving moments
+    h² = 1 - a^2
+    h = sqrt(h²)
+
+    # Get parameter transforms (identity if no prob)
+    transforms = if prob !== nothing
+        _param_transforms(prob.parameters)
+    else
+        nothing
+    end
+
+    pnames = keys(first(posterior.particles))
+
+    # Transform particles to unconstrained space
+    Z = Matrix{Float64}(undef, d, n)  # columns are particles in transformed space
+    for i in 1:n
+        θ = posterior.particles[i]
+        for (ki, k) in enumerate(pnames)
+            val = getproperty(θ, k)
+            Z[ki, i] = transforms !== nothing ? transforms[ki].forward(val) : val
         end
+    end
+
+    # Weighted mean and covariance in transformed space
+    μ_z = Z * w
+    Z_centered = Z .- μ_z
+    Σ_z = (Z_centered .* w') * Z_centered'
+
+    # Cholesky with regularisation
+    C = cholesky(Symmetric(Σ_z + 1e-8 * I); check=false)
+    if issuccess(C)
+        L = C.L
+    else
+        # Fallback: diagonal jitter
+        @warn "Liu-West: covariance Cholesky failed, falling back to diagonal jitter"
+        L = Diagonal(sqrt.(max.(diag(Σ_z), 1e-20)))
+    end
+
+    # Apply Liu-West to resampled particles
+    for i in 1:n
+        # Get resampled particle in transformed space
+        θ_old = new_particles[i]
+        z_i = Vector{Float64}(undef, d)
+        for (ki, k) in enumerate(pnames)
+            z_i[ki] = transforms !== nothing ? transforms[ki].forward(getproperty(θ_old, k)) : getproperty(θ_old, k)
+        end
+
+        # Shrink toward mean + correlated noise
+        m_i = a .* z_i .+ (1 - a) .* μ_z
+        z_new = m_i .+ h .* (L * randn(d))
+
+        # Back-transform to original space
+        vals = ntuple(d) do ki
+            z = z_new[ki]
+            transforms !== nothing ? transforms[ki].inverse(z) : z
+        end
+        new_particles[i] = ComponentArray(NamedTuple{pnames}(vals))
     end
 
     copyto!(posterior.particles, new_particles)
     fill!(posterior.log_weights, -log(n))
+
+    @debug "Resampled with Liu-West kernel (a=$a, h=$(round(h; digits=4)))"
     posterior
 end

@@ -2,13 +2,15 @@
     ExperimentLog
 
 Records the full experiment history for post-hoc analysis, trajectory replay,
-and reproducibility.
+and reproducibility.  When `record_posterior=true` is passed to `run_experiment`,
+each entry includes a snapshot of the posterior (particles + log_weights) at that step.
 """
 struct ExperimentLog
     history::Vector{NamedTuple}
+    prior_snapshot::Union{Nothing, NamedTuple}   # (particles, log_weights) before any data
 end
 
-ExperimentLog() = ExperimentLog(NamedTuple[])
+ExperimentLog(; prior_snapshot=nothing) = ExperimentLog(NamedTuple[], prior_snapshot)
 
 Base.push!(log::ExperimentLog, entry::NamedTuple) = push!(log.history, entry)
 Base.length(log::ExperimentLog) = length(log.history)
@@ -48,6 +50,32 @@ function log_evidence_series(log::ExperimentLog)
     [h.diagnostics.log_marginal for h in log.history]
 end
 
+"""
+    has_posterior_history(log::ExperimentLog)
+
+Check whether the log contains posterior snapshots for animation/replay.
+"""
+has_posterior_history(log::ExperimentLog) =
+    log.prior_snapshot !== nothing && !isempty(log.history) &&
+    hasproperty(first(log.history), :posterior_snapshot)
+
+"""
+    posterior_snapshots(log::ExperimentLog)
+
+Return vector of (particles, log_weights) snapshots, one per observation step.
+"""
+function posterior_snapshots(log::ExperimentLog)
+    [h.posterior_snapshot for h in log.history if hasproperty(h, :posterior_snapshot) && h.posterior_snapshot !== nothing]
+end
+
+"""
+    _snapshot_posterior(posterior::ParticlePosterior)
+
+Deep-copy the current posterior state for history recording.
+"""
+_snapshot_posterior(posterior::ParticlePosterior) =
+    (particles=copy(posterior.particles), log_weights=copy(posterior.log_weights))
+
 # --- Logging helpers ---
 
 """Format a design point NamedTuple for compact display."""
@@ -76,6 +104,7 @@ Run an adaptive experiment: select → acquire → update → display.
 - `n_per_step = 1`: measurements per adaptive step
 - `headless = false`: suppress GUI for testing
 - `prediction_grid = nothing`: dense ξ grid for credible band plots
+- `record_posterior = false`: snapshot posterior at every step for animation/replay
 
 Returns `(posterior=posterior, log=ExperimentLog)`.
 """
@@ -90,8 +119,10 @@ function run_experiment(
     n_per_step::Int=1,
     headless::Bool=false,
     prediction_grid=nothing,
+    record_posterior::Bool=false,
 )
-    log = ExperimentLog()
+    prior_snap = record_posterior ? _snapshot_posterior(posterior) : nothing
+    log = ExperimentLog(; prior_snapshot=prior_snap)
     spent = 0.0
     ξ_prev = nothing
     step = 0
@@ -153,8 +184,12 @@ function run_experiment(
                 ess_after = effective_sample_size(posterior)
                 resampled = ess_after > ess_before + 10
 
+                # Snapshot posterior if recording history
+                snapshot = record_posterior ? _snapshot_posterior(posterior) : nothing
+
                 # Record
-                push!(log, (ξ=ξ, y=y, cost=c, diagnostics=diag, step=step))
+                push!(log, (ξ=ξ, y=y, cost=c, diagnostics=diag, step=step,
+                            posterior_snapshot=snapshot))
 
                 # Log: per-step detail at @debug, periodic summaries at @info
                 y_str = y isa Real ? round(y; digits=4) : y

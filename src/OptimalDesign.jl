@@ -13,7 +13,7 @@ import GLMakie
 
 export DesignProblem, Identity, DeltaMethod, select,
        DCriterion, ACriterion, ECriterion,
-       information, transform, weighted_fim,
+       information, information!, transform, weighted_fim, weighted_fim!,
        expected_utility, score_candidates,
        ParticlePosterior, sample, posterior_mean,
        effective_sample_size, update!, draw,
@@ -24,10 +24,12 @@ export DesignProblem, Identity, DeltaMethod, select,
        # Phase 3
        ExperimentLog, run_experiment, observation_diagnostics,
        design_points, observations, cumulative_cost, log_evidence_series,
+       has_posterior_history, posterior_snapshots,
        # Phase 4
        posterior_predictions, credible_band,
        plot_credible_bands, plot_design_allocation,
-       plot_gateaux, plot_residuals, plot_posterior_marginals, plot_corner
+       plot_gateaux, plot_residuals, plot_posterior_marginals, plot_corner,
+       record_corner_animation
 
 # Phase 1: Types and FIM
 include("types.jl")

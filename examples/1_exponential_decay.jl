@@ -28,7 +28,7 @@ ENV["JULIA_DEBUG"] = OptimalDesign
 # 1. Problem setup
 # ═══════════════════════════════════════════════════
 
-n_obs = 200
+n_obs = 20
 prob = DesignProblem(
     (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
     parameters=(A=LogUniform(0.1, 10), R₂=Uniform(1, 50)),

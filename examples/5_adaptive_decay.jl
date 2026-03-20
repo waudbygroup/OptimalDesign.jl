@@ -29,10 +29,10 @@ Random.seed!(42)
 
 prob = DesignProblem(
     (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
-    parameters=(A=Normal(1, 0.1), R₂=LogUniform(1, 50)),
+    parameters=(A=LogUniform(0.1, 10), R₂=Uniform(1, 50)),
     # transformation=select(:R₂),
     sigma=(θ, ξ) -> 0.05,
-    cost=(prev, ξ) -> ξ.t + 0.1,
+    cost=(prev, ξ) -> ξ.t + 1,
 )
 
 candidates = [(t=t,) for t in range(0.001, 0.5, length=200)]
@@ -55,7 +55,7 @@ println()
 # 2. Run adaptive experiment via run_experiment
 # ═══════════════════════════════════════════════
 
-budget = 10.0
+budget = 20.0
 
 println("Running adaptive experiment (budget=$budget)...")
 prior_adaptive = ParticlePosterior(prob, 1000)
@@ -64,9 +64,10 @@ result = run_experiment(
     prob, candidates, prior_adaptive, acquire;
     budget=budget,
     criterion=DCriterion(),
-    posterior_samples=200,
+    # posterior_samples=200,
     n_per_step=1,
     headless=false,
+    record_posterior=true,
 )
 
 posterior_adaptive = result.posterior
@@ -90,7 +91,7 @@ println("\n--- Batch design comparison (n=$n_adaptive) ---")
 prior_batch = ParticlePosterior(prob, 1000)
 
 batch_design = select(prob, candidates, prior_batch;
-    n=n_adaptive, criterion=DCriterion(), posterior_samples=1000, exchange_algorithm=true,
+    n=n_adaptive, criterion=DCriterion(), exchange_algorithm=true,
     exchange_steps=200)
 
 println("Batch design allocation:")
@@ -235,5 +236,15 @@ axislegend(ax5b)
 
 fig5
 # save("ex5_convergence.pdf", fig5)
+
+# --- Figure 6: Animated corner plot ---
+
+if has_posterior_history(log_adaptive)
+    println("Recording posterior evolution animation...")
+    record_corner_animation(log_adaptive, "ex5_posterior_evolution.mp4";
+        params=[:A, :R₂],
+        truth=(A=θ_true.A, R₂=θ_true.R₂),
+        framerate=5)
+end
 
 println("Done. Figures created — uncomment save() calls to export PDFs.")

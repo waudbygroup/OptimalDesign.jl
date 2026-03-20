@@ -30,9 +30,10 @@ function gateaux_derivative(
 
     for j in idx
         θ = particles[j]
+        cache = GradientCache(θ, prob.predict, first(candidates))
 
         # Build weighted FIM in full parameter space
-        M_w = _particle_weighted_fim(prob, θ, candidates, weights)
+        M_w = _particle_weighted_fim(prob, θ, candidates, weights; cache=cache)
 
         C = cholesky(Symmetric(M_w); check=false)
         if !issuccess(C)
@@ -42,7 +43,7 @@ function gateaux_derivative(
         count += 1
 
         # Compute per-candidate Gateaux derivatives for this particle
-        gd .+= _gateaux_for_particle(criterion, prob, θ, M_w, candidates)
+        gd .+= _gateaux_for_particle(criterion, prob, θ, M_w, candidates, cache)
     end
 
     count == 0 ? fill(-Inf, K) : gd ./ count
@@ -52,12 +53,17 @@ end
 Build the weighted FIM for a single particle θ: M_w(θ) = Σ_k w_k M_k(θ).
 Returns a p×p matrix in the full parameter space (no transformation).
 """
-function _particle_weighted_fim(prob, θ, candidates, weights)
+function _particle_weighted_fim(prob, θ, candidates, weights;
+                                cache::Union{Nothing, GradientCache}=nothing)
     p = length(θ)
     M_w = zeros(p, p)
+    M_k = zeros(p, p)
     for k in eachindex(candidates)
         if weights[k] > 1e-10
-            M_w .+= weights[k] .* information(prob, θ, candidates[k])
+            information!(M_k, prob, θ, candidates[k]; cache=cache)
+            @inbounds for j in 1:p, i in 1:p
+                M_w[i, j] += weights[k] * M_k[i, j]
+            end
         end
     end
     M_w
@@ -65,16 +71,29 @@ end
 
 # --- D-criterion: analytical Gateaux derivative ---
 
-function _gateaux_for_particle(::DCriterion, prob, θ, M_w, candidates)
+function _gateaux_for_particle(::DCriterion, prob, θ, M_w, candidates,
+                               cache::Union{Nothing, GradientCache}=nothing)
+    p = size(M_w, 1)
     M_w_inv = inv(Symmetric(M_w))
 
     # Precompute the "sensitivity" matrix C such that d_k = tr(C M_k)
-    C = _d_sensitivity_matrix(prob, M_w_inv, θ)
+    C = _d_sensitivity_matrix(prob, M_w_inv, θ)::Matrix{Float64}
 
-    map(candidates) do ξ
-        M_k = information(prob, θ, ξ)
-        tr(C * M_k)
+    # Pre-allocate buffer for the inner loop
+    M_k = zeros(p, p)
+    K = length(candidates)
+    result = Vector{Float64}(undef, K)
+
+    @inbounds for k in 1:K
+        information!(M_k, prob, θ, candidates[k]; cache=cache)
+        # tr(C * M_k) without allocating the product
+        s = 0.0
+        for j in 1:p, i in 1:p
+            s += C[i, j] * M_k[j, i]
+        end
+        result[k] = s
     end
+    result
 end
 
 """
@@ -88,7 +107,7 @@ function _d_sensitivity_matrix(prob, M_w_inv, θ)
 end
 
 function _d_sensitivity_matrix(::Identity, M_w_inv, θ)
-    M_w_inv
+    Matrix{Float64}(M_w_inv)
 end
 
 function _d_sensitivity_matrix(dm::DeltaMethod, M_w_inv, θ)
@@ -96,23 +115,35 @@ function _d_sensitivity_matrix(dm::DeltaMethod, M_w_inv, θ)
     # Mτ = (∇τ M⁻¹ ∇τ')⁻¹
     Mt = inv(Symmetric(∇τ * M_w_inv * ∇τ'))
     # C = M⁻¹ ∇τ' Mτ ∇τ M⁻¹
-    M_w_inv * ∇τ' * Mt * ∇τ * M_w_inv
+    Matrix{Float64}(M_w_inv * ∇τ' * Mt * ∇τ * M_w_inv)
 end
 
 # --- A-criterion and E-criterion: numerical Gateaux derivative ---
 
-function _gateaux_for_particle(criterion::DesignCriterion, prob, θ, M_w, candidates)
+function _gateaux_for_particle(criterion::DesignCriterion, prob, θ, M_w, candidates,
+                               cache::Union{Nothing, GradientCache}=nothing)
+    p = size(M_w, 1)
     Mt = transform(prob, M_w, θ)
     Φ0 = safe_criterion(criterion, Mt)
     isfinite(Φ0) || return fill(-Inf, length(candidates))
 
     ε = 1e-6
-    map(candidates) do ξ
-        M_k = information(prob, θ, ξ)
-        Mt_ε = transform(prob, M_w + ε * M_k, θ)
+    M_k = zeros(p, p)
+    M_pert = zeros(p, p)
+    K = length(candidates)
+    result = Vector{Float64}(undef, K)
+
+    @inbounds for k in 1:K
+        information!(M_k, prob, θ, candidates[k]; cache=cache)
+        # M_pert = M_w + ε * M_k (no allocation)
+        for j in 1:p, i in 1:p
+            M_pert[i, j] = M_w[i, j] + ε * M_k[i, j]
+        end
+        Mt_ε = transform(prob, M_pert, θ)
         Φ_ε = safe_criterion(criterion, Mt_ε)
-        isfinite(Φ_ε) ? (Φ_ε - Φ0) / ε : -Inf
+        result[k] = isfinite(Φ_ε) ? (Φ_ε - Φ0) / ε : -Inf
     end
+    result
 end
 
 # --- Optimality dimension ---
