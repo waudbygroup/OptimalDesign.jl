@@ -6,7 +6,7 @@ using ForwardDiff
 using LinearAlgebra
 using LogExpFunctions: logsumexp
 using Random
-using Statistics
+using Statistics: mean, median, quantile, std, var
 
 import CairoMakie
 import GLMakie
@@ -18,8 +18,8 @@ export DesignProblem, select,
 # Posterior
 export ParticlePosterior
 
-# Design workflows
-export design, run_batch, run_adaptive
+# Design
+export ExperimentalDesign, design, run_batch, run_adaptive
 
 # Inference and analysis
 export posterior_mean, effective_sample_size,
@@ -31,6 +31,7 @@ export plot_corner, plot_residuals, record_corner_animation
 
 # Types and problem definition
 include("types.jl")
+include("design_type.jl")
 include("problem.jl")
 include("sampling.jl")
 include("information.jl")

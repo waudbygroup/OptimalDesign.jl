@@ -65,7 +65,7 @@ println("Goal:    Ds-optimal design for R₁\n")
 # 2. Validate analytic Jacobian against ForwardDiff
 # ═══════════════════════════════════════════════
 
-θ_test = draw(prob.parameters)
+θ_test = OptimalDesign.draw(prob.parameters)
 ξ_test = candidates[50]
 
 J_analytic = prob.jacobian(θ_test, ξ_test)
@@ -87,8 +87,8 @@ prob_ad = DesignProblem(
 
 θ_eval = ComponentArray(A=1.0, B=2.0, R₁=1.0)
 ξ_eval = (τ=1.0,)
-M_analytic = information(prob, θ_eval, ξ_eval)
-M_ad = information(prob_ad, θ_eval, ξ_eval)
+M_analytic = OptimalDesign.information(prob, θ_eval, ξ_eval)
+M_ad = OptimalDesign.information(prob_ad, θ_eval, ξ_eval)
 println("  FIM agreement: ", isapprox(M_analytic, M_ad, atol=1e-10), "\n")
 
 # ═══════════════════════════════════════════════
@@ -118,10 +118,10 @@ for (ξ, count) in d
     idx !== nothing && (w_opt[idx] = count / 20)
 end
 
-gd = gateaux_derivative(prob, candidates, prior.particles, w_opt;
+gd = OptimalDesign.gateaux_derivative(prob, candidates, prior.particles, w_opt;
     criterion=DCriterion(), posterior_samples=1000)
 
-opt_check = verify_optimality(prob, candidates, prior.particles, w_opt;
+opt_check = OptimalDesign.verify_optimality(prob, candidates, prior.particles, w_opt;
     criterion=DCriterion(), posterior_samples=1000)
 println("\nOptimality verification:")
 println("  Is optimal: $(opt_check.is_optimal)")
@@ -132,7 +132,7 @@ println("  Bound (q): $(round(opt_check.dimension; digits=3))")
 # 5. Efficiency comparison against uniform
 # ═══════════════════════════════════════════════
 
-uniform = uniform_allocation(candidates, 20)
+uniform = OptimalDesign.uniform_allocation(candidates, 20)
 w_unif = zeros(length(candidates))
 for (ξ, count) in uniform
     idx = findfirst(c -> c == ξ, candidates)

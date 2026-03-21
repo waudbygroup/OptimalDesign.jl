@@ -179,7 +179,7 @@ hlines!(ax1b, [budget], color=:gray, linestyle=:dash)
 # Bottom: log marginal likelihood
 ax1c = GLMakie.Axis(fig1[3, 1], xlabel="Step", ylabel="Log marginal likelihood",
     title="Sequential Model Checking")
-log_ml = log_evidence_series(log_adaptive)
+log_ml = OptimalDesign.log_evidence_series(log_adaptive)
 lines!(ax1c, 1:n_adaptive, log_ml, color=:blue, linewidth=1.5)
 scatter!(ax1c, 1:n_adaptive, log_ml, color=:blue, markersize=5)
 
@@ -266,7 +266,7 @@ fig3 = plot_corner(posterior_adaptive, posterior_batch;
 
 # --- Figure 4: Posterior evolution animation ---
 
-if has_posterior_history(log_adaptive)
+if OptimalDesign.has_posterior_history(log_adaptive)
     println("Recording posterior evolution animation...")
     record_corner_animation(log_adaptive, "ex6_posterior_evolution.mp4";
         params=[:R₂₁, :R₂₂],

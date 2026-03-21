@@ -41,3 +41,9 @@ struct SwitchingDesignProblem{F,J,S,T,C,K} <: AbstractDesignProblem
     switching_cost::Float64
     constraint::K
 end
+
+# --- ExperimentalDesign ---
+
+struct ExperimentalDesign{T<:NamedTuple}
+    allocation::Vector{Tuple{T, Int}}
+end

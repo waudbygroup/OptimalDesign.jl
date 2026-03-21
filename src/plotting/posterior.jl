@@ -46,7 +46,7 @@ function plot_corner(
     d = length(names)
 
     # Default colours and labels
-    default_colors = [(:royalblue, 0.6), (:orange, 0.6), (:green, 0.6), (:purple, 0.6)]
+    default_colors = [(:orange, 0.6), (:royalblue, 0.6), (:green, 0.6), (:purple, 0.6)]
     cs = colors !== nothing ? colors : default_colors[1:min(n_dist, 4)]
     ls = labels !== nothing ? labels : [string(i) for i in 1:n_dist]
 
@@ -86,7 +86,7 @@ function plot_corner(
             if i == j
                 # ── Diagonal: 1D marginal histogram ──
                 ax = CairoMakie.Axis(fig[i, j]; xlabel, ylabel,
-                    title=i == 1 ? string(names[i]) : "")
+                    title=i == 1 ? string(names[i]) : "", yzoomlock=true, yrectzoom=false)
 
                 for di in 1:n_dist
                     vals = all_vals[di][i]
@@ -149,14 +149,20 @@ function plot_corner(
         end
     end
 
-    # Link axes: same column shares x-limits, same row shares y-limits (for off-diag)
+    # Link axes:
+    # - Same column shares x-limits (diagonal + scatter below)
+    # - Same row shares y-limits (scatter plots only — NOT the diagonal histogram)
+    # - Diagonal histograms: x linked to column, y independent (density scale)
     for j in 1:d
         col_axes = [axes_grid[i, j] for i in j:d if axes_grid[i, j] !== nothing]
         length(col_axes) > 1 && CairoMakie.linkxaxes!(col_axes...)
     end
-    for i in 2:d
-        row_axes = [axes_grid[i, j] for j in 1:i-1 if axes_grid[i, j] !== nothing]
-        length(row_axes) > 1 && CairoMakie.linkyaxes!(row_axes...)
+
+    # Auto-fit diagonal histogram y-axes independently
+    for i in 1:d
+        if axes_grid[i, i] !== nothing
+            CairoMakie.autolimits!(axes_grid[i, i])
+        end
     end
 
     fig
@@ -188,7 +194,7 @@ Each dataset is `(vals, weights)` where `vals[param_idx][particle_idx]`.
 Clears axes before drawing.
 """
 function _draw_corner_data!(fig, axes_grid, datasets, names, truth_vals;
-                            bins::Int=30, cs=nothing, ls=nothing)
+    bins::Int=30, cs=nothing, ls=nothing)
     d = length(names)
     n_dist = length(datasets)
     default_colors = [(:royalblue, 0.6), (:orange, 0.6), (:green, 0.6), (:purple, 0.6)]
@@ -285,6 +291,13 @@ function _make_corner_axes(fig, names)
     for i in 2:d
         row_axes = [axes_grid[i, j] for j in 1:i-1 if axes_grid[i, j] !== nothing]
         length(row_axes) > 1 && CairoMakie.linkyaxes!(row_axes...)
+    end
+
+    # Auto-fit diagonal histogram y-axes independently
+    for i in 1:d
+        if axes_grid[i, i] !== nothing
+            CairoMakie.autolimits!(axes_grid[i, i])
+        end
     end
 
     axes_grid

@@ -66,3 +66,17 @@ function _efficiency(::ECriterion, Φ_a, Φ_b, q)
     # Φ = λ_min, efficiency = Φ_a / Φ_b
     Φ_a / Φ_b
 end
+
+# --- ExperimentalDesign convenience overload ---
+
+function efficiency(
+    d_a::ExperimentalDesign,
+    d_b::ExperimentalDesign,
+    prob::AbstractDesignProblem,
+    candidates::AbstractVector{<:NamedTuple},
+    particles::AbstractVector;
+    kwargs...,
+)
+    efficiency(weights(d_a, candidates), weights(d_b, candidates),
+        prob, candidates, particles; kwargs...)
+end

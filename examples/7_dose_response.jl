@@ -34,7 +34,7 @@ println("  E0=$(θ_nom.E0), Emax=$(θ_nom.Emax), ED50=$(round(θ_nom.ED50, digit
 
 # Evaluate FIM at a few dose levels
 for d in [0.1, 0.3, 0.5, 0.8]
-    M = information(prob, θ_nom, (dose=d,))
+    M = OptimalDesign.information(prob, θ_nom, (dose=d,))
     println("\nFIM at dose=$d:")
     println("  rank = $(rank(M)), trace = $(round(tr(M), digits=2))")
 end
@@ -44,7 +44,7 @@ end
 prior = ParticlePosterior(prob, 500)
 
 println("\nScoring dose levels by D-optimality...")
-scores = score_candidates(prob, DCriterion(), prior.particles, candidates; posterior_samples=100)
+scores = OptimalDesign.score_candidates(prob, DCriterion(), prior.particles, candidates; posterior_samples=100)
 
 ranking = sortperm(scores, rev=true)
 println("\nTop 10 dose levels:")

@@ -22,6 +22,19 @@ function plot_design_allocation(
 end
 
 """
+    plot_design_allocation(d::ExperimentalDesign, candidates; x_field)
+
+Plot the weight distribution for an `ExperimentalDesign`.
+"""
+function plot_design_allocation(
+    d::ExperimentalDesign,
+    candidates::AbstractVector{<:NamedTuple};
+    kwargs...,
+)
+    plot_design_allocation(candidates, weights(d, candidates); kwargs...)
+end
+
+"""
     plot_gateaux(candidates, gd, weights; x_field)
 
 Plot the Gateaux derivative at each candidate, with the optimality bound.

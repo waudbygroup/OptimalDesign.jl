@@ -164,3 +164,25 @@ function verify_optimality(
         max_derivative=max_gd,
         dimension=q)
 end
+
+# --- ExperimentalDesign convenience overloads ---
+
+function gateaux_derivative(
+    prob::AbstractDesignProblem,
+    candidates::AbstractVector{<:NamedTuple},
+    particles::AbstractVector,
+    d::ExperimentalDesign;
+    kwargs...,
+)
+    gateaux_derivative(prob, candidates, particles, weights(d, candidates); kwargs...)
+end
+
+function verify_optimality(
+    prob::AbstractDesignProblem,
+    candidates::AbstractVector{<:NamedTuple},
+    particles::AbstractVector,
+    d::ExperimentalDesign;
+    kwargs...,
+)
+    verify_optimality(prob, candidates, particles, weights(d, candidates); kwargs...)
+end

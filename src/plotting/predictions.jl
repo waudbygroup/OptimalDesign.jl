@@ -34,3 +34,89 @@ function plot_credible_bands(
 
     fig
 end
+
+"""
+    plot_credible_bands(prob, posteriors, ξ_grid; labels, colors, truth, observations, ...)
+
+Multi-panel credible band plot comparing several posteriors (e.g. prior, optimal, uniform).
+Creates vertically stacked panels, one per posterior.
+
+# Keyword arguments
+- `labels::Vector{String}`: panel titles (default: "1", "2", …)
+- `colors`: band colour per panel (default: gray, blue, orange, …)
+- `truth`: callable or vector of true y-values to overlay as dashed red line
+- `observations`: vector of observation vectors (one per posterior, or `nothing`)
+- `level::Real = 0.9`: credible interval level
+- `x_field::Symbol`: which field of ξ to use as x-axis
+- `n_samples::Int = 200`: posterior samples for prediction
+"""
+function plot_credible_bands(
+    prob::AbstractDesignProblem,
+    posteriors::AbstractVector{<:ParticlePosterior},
+    ξ_grid::AbstractVector;
+    labels::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
+    colors=nothing,
+    truth=nothing,
+    observations=nothing,
+    level::Real=0.9,
+    x_field::Symbol=first(keys(first(ξ_grid))),
+    n_samples::Int=200,
+)
+    n_panels = length(posteriors)
+    default_colors = [(:gray, 0.3), (:blue, 0.3), (:orange, 0.3), (:green, 0.3)]
+    cs = colors !== nothing ? colors : default_colors[1:min(n_panels, length(default_colors))]
+    ls = labels !== nothing ? labels : [string(i) for i in 1:n_panels]
+
+    x_vals = [getfield(ξ, x_field) for ξ in ξ_grid]
+
+    # Compute truth curve if provided
+    # truth can be: θ (parameter values → compute predictions), or a pre-computed y vector
+    y_true = if truth === nothing
+        nothing
+    elseif truth isa AbstractVector{<:Real} && length(truth) == length(ξ_grid)
+        truth
+    else
+        # Assume truth is a parameter vector/NamedTuple — compute predictions
+        [prob.predict(truth, ξ) for ξ in ξ_grid]
+    end
+
+    fig = CairoMakie.Figure(size=(600, 300 * n_panels))
+
+    for (i, post) in enumerate(posteriors)
+        preds = posterior_predictions(prob, post, ξ_grid; n_samples=n_samples)
+        band = credible_band(preds; level=level)
+
+        ylabel = i == n_panels ÷ 2 + 1 ? "Prediction" : ""
+        xlabel = i == n_panels ? string(x_field) : ""
+        ax = CairoMakie.Axis(fig[i, 1];
+            xlabel, ylabel,
+            title="$(ls[i]) ($(round(Int, level*100))% CI)")
+
+        base_color = cs[i] isa Tuple ? cs[i] : (cs[i], 0.3)
+        line_color = cs[i] isa Tuple ? cs[i][1] : cs[i]
+
+        CairoMakie.band!(ax, x_vals, band.lower, band.upper, color=base_color)
+        CairoMakie.lines!(ax, x_vals, band.median, color=line_color, linewidth=2)
+
+        if y_true !== nothing
+            CairoMakie.lines!(ax, x_vals, y_true, color=:red, linewidth=1.5,
+                linestyle=:dash, label="Truth")
+        end
+
+        # Observation overlay
+        obs = observations !== nothing && i <= length(observations) ? observations[i] : nothing
+        if obs !== nothing
+            obs_x = [getfield(o.ξ, x_field) for o in obs]
+            obs_y = [o.y isa NamedTuple ? o.y.value : o.y for o in obs]
+            CairoMakie.scatter!(ax, obs_x, obs_y, color=:black, markersize=5,
+                label="Observations")
+        end
+
+        # Hide x decorations on non-bottom panels
+        if i < n_panels
+            CairoMakie.hidexdecorations!(ax; grid=false)
+        end
+    end
+
+    fig
+end

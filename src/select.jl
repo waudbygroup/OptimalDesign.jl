@@ -244,7 +244,7 @@ function _select_batch(
     end
 
     # Sequence to minimise switching cost
-    _sequence_design(prob, result, ξ_prev)
+    ExperimentalDesign(_sequence_design(prob, result, ξ_prev))
 end
 
 # --- Apportionment ---
@@ -308,7 +308,7 @@ end
 Compress a list of selected candidates into (ξ, count) pairs.
 """
 function _compress(selected::Vector{<:NamedTuple})
-    isempty(selected) && return Tuple{NamedTuple,Int}[]
+    isempty(selected) && return ExperimentalDesign(Tuple{NamedTuple,Int}[])
 
     result = Tuple{eltype(selected),Int}[]
     current = selected[1]
@@ -324,7 +324,7 @@ function _compress(selected::Vector{<:NamedTuple})
         end
     end
     push!(result, (current, count))
-    result
+    ExperimentalDesign(result)
 end
 
 """
@@ -345,7 +345,7 @@ function uniform_allocation(candidates::AbstractVector{<:NamedTuple}, n::Int)
                 push!(result, (candidates[k], counts[k]))
             end
         end
-        return result
+        return ExperimentalDesign(result)
     end
 
     # Select n evenly-spaced indices
@@ -363,7 +363,7 @@ function uniform_allocation(candidates::AbstractVector{<:NamedTuple}, n::Int)
         push!(result, (candidates[idx], c))
         i += c
     end
-    result
+    ExperimentalDesign(result)
 end
 
 # --- Batch experiment execution ---
@@ -379,7 +379,7 @@ Execute a pre-computed design: acquire observations and update the posterior.
 Returns `(posterior=posterior, observations=[(ξ=..., y=...), ...])`.
 """
 function run_batch(
-    d::AbstractVector,
+    d::ExperimentalDesign,
     prob::AbstractDesignProblem,
     posterior::ParticlePosterior,
     acquire;

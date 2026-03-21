@@ -57,8 +57,8 @@ println("Goal:    Ds-optimal design for (R₂₁, R₂₂)\n")
 # 2. Examine block-sparse FIM structure
 # ═══════════════════════════════════════════════
 
-M1 = information(prob, θ_true, (i=1, t=0.1))
-M2 = information(prob, θ_true, (i=2, t=0.05))
+M1 = OptimalDesign.information(prob, θ_true, (i=1, t=0.1))
+M2 = OptimalDesign.information(prob, θ_true, (i=2, t=0.05))
 
 println("FIM measuring decay 1 (i=1, t=0.1):")
 display(round.(M1, digits=4))
@@ -103,10 +103,10 @@ for (ξ, count) in d
     idx !== nothing && (w_opt[idx] = count / n_obs)
 end
 
-gd = gateaux_derivative(prob, candidates, prior.particles, w_opt;
+gd = OptimalDesign.gateaux_derivative(prob, candidates, prior.particles, w_opt;
     criterion=DCriterion(), posterior_samples=1000)
 
-opt_check = verify_optimality(prob, candidates, prior.particles, w_opt;
+opt_check = OptimalDesign.verify_optimality(prob, candidates, prior.particles, w_opt;
     criterion=DCriterion(), posterior_samples=1000)
 println("\nOptimality verification:")
 println("  Is optimal: $(opt_check.is_optimal)")
@@ -117,7 +117,7 @@ println("  Bound (q): $(round(opt_check.dimension; digits=3))")
 # 5. Efficiency comparison against uniform
 # ═══════════════════════════════════════════════
 
-uniform = uniform_allocation(candidates, n_obs)
+uniform = OptimalDesign.uniform_allocation(candidates, n_obs)
 w_unif = zeros(length(candidates))
 for (ξ, count) in uniform
     idx = findfirst(c -> c == ξ, candidates)
