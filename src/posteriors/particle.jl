@@ -276,7 +276,7 @@ derived from the prior bounds, preventing particles from leaving the support.
 - `prob`: DesignProblem (optional). Provides prior distributions for bound-aware transforms.
 - `a`: shrinkage parameter (default 0.98). Controls jitter magnitude: h² = 1 - a².
 """
-function resample!(posterior::ParticlePosterior; prob::Union{DesignProblem,Nothing}=nothing, a::Float64=0.98)
+function resample!(posterior::ParticlePosterior; prob::Union{AbstractDesignProblem,Nothing}=nothing, a::Float64=0.98)
     n = length(posterior.particles)
     d = length(first(posterior.particles))
     w = exp.(posterior.log_weights .- logsumexp(posterior.log_weights))

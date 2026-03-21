@@ -231,14 +231,9 @@ function _select_batch(
         max_iter=exchange_steps,
         costs=costs)
 
-    # Apportion: budget-aware when costs vary, count-based otherwise
-    if costs !== nothing && budget < Inf
-        # Deduct switching overhead for SwitchingDesignProblem
-        measurement_budget = _deduct_switching_overhead(prob, weights, candidates, budget)
-        counts = apportion(weights, measurement_budget, costs_vec)
-    else
-        counts = apportion(weights, n)
-    end
+    # Apportion weights to n measurement slots.
+    # Budget enforcement is handled by the caller (run_experiment tracks per-obs cost).
+    counts = apportion(weights, n)
 
     result = Tuple{eltype(candidates),Int}[]
     for k in eachindex(candidates)

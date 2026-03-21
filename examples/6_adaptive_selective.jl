@@ -57,7 +57,7 @@ result = run_experiment(
     prob, candidates, prior_adaptive, acquire;
     budget=budget,
     criterion=DCriterion(),
-    n_per_step=5,
+    n_per_step=1,
     headless=true,
     record_posterior=true,
 )
@@ -143,7 +143,7 @@ fig1 = Figure(size=(800, 700))
 
 # Top: which decay was measured and at what time
 ax1a = GLMakie.Axis(fig1[1, 1], ylabel="Design time t",
-    title="Adaptive Design Trajectory (switching cost = 1.0)")
+    title="Adaptive Design Trajectory")
 
 # Separate by decay
 steps_1 = [i for i in 1:n_adaptive if log_adaptive[i].ξ.i == 1]
