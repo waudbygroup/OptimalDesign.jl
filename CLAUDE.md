@@ -21,3 +21,4 @@ ENV["JULIA_DEBUG"] = OptimalDesign
 
 - **All type definitions go in `types.jl`** — structs, abstract types, type aliases.
   Other files contain methods, constructors, and logic only.
+  **This is a hard rule.** Never define a struct or abstract type outside `types.jl`.
