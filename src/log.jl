@@ -57,9 +57,9 @@ function posterior_snapshots(log::ExperimentLog)
 end
 
 """
-    _snapshot_posterior(posterior::ParticlePosterior)
+    _snapshot_posterior(posterior::Particles)
 
 Deep-copy the current posterior state for history recording.
 """
-_snapshot_posterior(posterior::ParticlePosterior) =
+_snapshot_posterior(posterior::Particles) =
     (particles=copy(posterior.particles), log_weights=copy(posterior.log_weights))

@@ -35,7 +35,7 @@ prob = DesignProblem(
 )
 
 candidates = [(t=t,) for t in range(0.001, 0.5, length=200)]
-prior = ParticlePosterior(prob, 1000)
+prior = Particles(prob, 1000)
 
 # Ground truth (unknown to the design algorithm)
 θ_true = ComponentArray(A=1.0, R₂=25.0)
@@ -86,14 +86,14 @@ println("  Uniform needs ~$(round(1 / eff; digits=1))× more measurements to mat
 
 println("\n--- Simulated experiments ---")
 
-posterior_opt = ParticlePosterior(prob, 1000)
+posterior_opt = Particles(prob, 1000)
 result_opt = run_batch(d, prob, posterior_opt, acquire)
 
-posterior_unif = ParticlePosterior(prob, 1000)
+posterior_unif = Particles(prob, 1000)
 result_unif = run_batch(u, prob, posterior_unif, acquire)
 
-μ_opt = posterior_mean(result_opt.posterior)
-μ_unif = posterior_mean(result_unif.posterior)
+μ_opt = mean(result_opt.posterior)
+μ_unif = mean(result_unif.posterior)
 println("Posterior mean (optimal):  A = $(round(μ_opt.A; digits=3)), R₂ = $(round(μ_opt.R₂; digits=2))")
 println("Posterior mean (uniform):  A = $(round(μ_unif.A; digits=3)), R₂ = $(round(μ_unif.R₂; digits=2))")
 

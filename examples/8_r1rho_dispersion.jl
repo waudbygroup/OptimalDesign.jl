@@ -83,7 +83,7 @@ end
 budget = 100.0
 
 println("\n--- Adaptive experiment (budget=$budget) ---")
-prior_adaptive = ParticlePosterior(prob, 1000)
+prior_adaptive = Particles(prob, 1000)
 
 result_adaptive = run_adaptive(
     prob, candidates, prior_adaptive, acquire;
@@ -95,7 +95,7 @@ result_adaptive = run_adaptive(
 
 log_adaptive = result_adaptive.log
 n_adaptive = length(log_adaptive)
-μ_adaptive = posterior_mean(result_adaptive.posterior)
+μ_adaptive = mean(result_adaptive.posterior)
 
 println("Steps: $n_adaptive")
 println("Posterior mean (adaptive): I₀=$(round(μ_adaptive.I₀; digits=2)), " *
@@ -107,15 +107,15 @@ println("Posterior mean (adaptive): I₀=$(round(μ_adaptive.I₀; digits=2)), "
 # ═══════════════════════════════════════════════
 
 println("\n--- Batch design (n=$n_adaptive, matching adaptive count) ---")
-prior_batch = ParticlePosterior(prob, 1000)
+prior_batch = Particles(prob, 1000)
 
 d = design(prob, candidates, prior_batch; n=n_adaptive, exchange_steps=200)
 display(d)
 
-posterior_batch = ParticlePosterior(prob, 1000)
+posterior_batch = Particles(prob, 1000)
 result_batch = run_batch(d, prob, posterior_batch, acquire)
 
-μ_batch = posterior_mean(result_batch.posterior)
+μ_batch = mean(result_batch.posterior)
 println("Posterior mean (batch):  I₀=$(round(μ_batch.I₀; digits=2)), " *
         "R₂₀=$(round(μ_batch.R₂₀; digits=2)), " *
         "A=$(round(μ_batch.A; digits=2)), K=$(round(μ_batch.K; digits=0))")
@@ -238,7 +238,7 @@ fig5 = plot_corner(result_adaptive.posterior, result_batch.posterior;
 
 # --- Figure 6: ESS and posterior convergence ---
 
-prior_ess = ParticlePosterior(prob, 1000)
+prior_ess = Particles(prob, 1000)
 ess_history = Float64[]
 r20_history = Float64[]
 A_history = Float64[]
@@ -247,7 +247,7 @@ K_history = Float64[]
 for entry in log_adaptive
     OptimalDesign.update!(prior_ess, prob, entry.ξ, entry.y)
     push!(ess_history, effective_sample_size(prior_ess))
-    μ = posterior_mean(prior_ess)
+    μ = mean(prior_ess)
     push!(r20_history, μ.R₂₀)
     push!(A_history, μ.A)
     push!(K_history, μ.K)

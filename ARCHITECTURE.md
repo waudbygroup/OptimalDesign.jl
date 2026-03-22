@@ -168,13 +168,13 @@ abstract type Posterior end
 
 sample(posterior, n)              # -> vector of ComponentArrays
 update!(posterior, prob, ξ, y)    # incorporate observation
-posterior_mean(posterior)          # -> ComponentArray
+mean(posterior)          # -> ComponentArray
 ```
 
-**ParticlePosterior**: Vector of ComponentArray particles with a log-weight vector. Update by reweighting according to the observation likelihood. Systematic resampling when effective sample size drops below threshold, with optional kernel jittering to prevent particle impoverishment.
+**Particles**: Vector of ComponentArray particles with a log-weight vector. Update by reweighting according to the observation likelihood. Systematic resampling when effective sample size drops below threshold, with optional kernel jittering to prevent particle impoverishment.
 
 ```julia
-struct ParticlePosterior{T}
+struct Particles{T}
     particles::Vector{T}
     log_weights::Vector{Float64}
 end
@@ -504,7 +504,7 @@ prob = DesignProblem(
     cost = (prev, ξ) -> ξ.t + 0.1,
 )
 candidates = [(t=t,) for t in range(0.001, 0.5, length=200)]
-prior = ParticlePosterior(prob, 1000)
+prior = Particles(prob, 1000)
 
 # Batch design
 design = select(prob, candidates, prior; n=20, criterion=DCriterion())
@@ -624,7 +624,7 @@ prob = DesignProblem(
     cost = (prev, ξ) -> ξ.t + 0.1,
 )
 candidates = [(t=t,) for t in range(0.001, 0.5, length=200)]
-prior = ParticlePosterior(prob, 1000)
+prior = Particles(prob, 1000)
 
 # Run adaptive experiment
 result = run_experiment(
@@ -636,11 +636,11 @@ result = run_experiment(
 )
 
 # Check posterior has converged near truth
-post_mean = posterior_mean(result.posterior)
+post_mean = mean(result.posterior)
 @test abs(post_mean.R₂ - 25.0) < 5.0
 
 # Compare: batch design with same budget
-batch = select(prob, candidates, ParticlePosterior(prob, 1000);
+batch = select(prob, candidates, Particles(prob, 1000);
                n=20, criterion=DCriterion())
 ```
 
@@ -671,7 +671,7 @@ prob = DesignProblem(
     end,
 )
 candidates = [(i=i, t=t) for i in [1, 2] for t in range(0.001, 0.5, length=200)]
-prior = ParticlePosterior(prob, 1000)
+prior = Particles(prob, 1000)
 
 result = run_experiment(
     prob, candidates, prior, acquire;
@@ -736,7 +736,7 @@ Implement the core type definitions and FIM computation. This is the mathematica
 
 ### Phase 2: Posterior and solver
 
-1. `ParticlePosterior`: particles + log_weights, constructor from priors, `sample`, `posterior_mean`, `update!`, effective sample size, systematic resampling with kernel jitter.
+1. `Particles`: particles + log_weights, constructor from priors, `sample`, `mean`, `update!`, effective sample size, systematic resampling with kernel jitter.
 2. `loglikelihood` using sigma from the problem (and handling structured observations with `y.σ`).
 3. `select` — unified interface: single-point scoring by utility/cost, greedy multi-point, and weight optimisation for batch.
 4. Exchange algorithm for batch weight optimisation.
@@ -825,7 +825,7 @@ OptimalDesign.jl/
 │   ├── efficiency.jl           # Relative efficiency, apportionment
 │   ├── diagnostics.jl          # Observation diagnostics, log evidence
 │   ├── posteriors/
-│   │   ├── particle.jl         # ParticlePosterior
+│   │   ├── particle.jl         # Particles
 │   │   └── laplace.jl          # LaplacePosterior
 │   ├── experiment.jl           # run_experiment, ExperimentLog
 │   └── dashboard/

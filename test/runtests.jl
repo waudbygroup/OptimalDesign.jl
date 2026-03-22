@@ -164,14 +164,14 @@ const od_loglikelihood = OptimalDesign.loglikelihood
         @test Mt[1, 1] > 0
     end
 
-    @testset "ParticlePosterior" begin
+    @testset "Particles" begin
         prob = DesignProblem(
             (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
             sigma=(θ, ξ) -> 0.05,
         )
 
-        post = ParticlePosterior(prob, 500)
+        post = Particles(prob, 500)
         @test length(post.particles) == 500
         @test length(post.log_weights) == 500
         @test all(isfinite, post.log_weights)
@@ -181,7 +181,7 @@ const od_loglikelihood = OptimalDesign.loglikelihood
         @test ess ≈ 500.0 atol = 1.0
 
         # Posterior mean should be close to prior mean
-        μ = posterior_mean(post)
+        μ = mean(post)
         @test μ isa ComponentArray
         @test abs(μ.A - 1.0) < 0.1  # prior mean of A is 1.0
 
@@ -218,14 +218,14 @@ const od_loglikelihood = OptimalDesign.loglikelihood
             sigma=(θ, ξ) -> 0.05,
         )
 
-        post = ParticlePosterior(prob, 1000)
+        post = Particles(prob, 1000)
         θ_true = ComponentArray(A=1.0, R₂=10.0)
         ξ = (t=0.1,)
         y = prob.predict(θ_true, ξ) + 0.05 * randn()
 
         update!(post, prob, ξ, y)
 
-        μ = posterior_mean(post)
+        μ = mean(post)
         @test μ isa ComponentArray
     end
 
@@ -335,7 +335,7 @@ const od_loglikelihood = OptimalDesign.loglikelihood
             cost=Returns(1.0),
         )
         candidates = [(t=t,) for t in range(0.01, 0.5, length=20)]
-        prior = ParticlePosterior(prob, 100)
+        prior = Particles(prob, 100)
 
         # Select 3 points greedily
         design = design(prob, candidates, prior;
@@ -359,7 +359,7 @@ const od_loglikelihood = OptimalDesign.loglikelihood
             cost=ξ -> ξ.t + 0.5,
         )
         candidates = [(t=t,) for t in range(0.01, 0.5, length=20)]
-        prior = ParticlePosterior(prob, 100)
+        prior = Particles(prob, 100)
 
         # Budget of 2.0 should limit selections
         design = design(prob, candidates, prior;
@@ -452,7 +452,7 @@ const od_loglikelihood = OptimalDesign.loglikelihood
             sigma=(θ, ξ) -> 0.05,
         )
 
-        post = ParticlePosterior(prob, 500)
+        post = Particles(prob, 500)
         θ_true = ComponentArray(A=1.0, R₂=10.0)
         ξ = (t=0.1,)
         y = prob.predict(θ_true, ξ)
@@ -494,7 +494,7 @@ const od_loglikelihood = OptimalDesign.loglikelihood
         end
 
         candidates = [(t=t,) for t in range(0.01, 0.5, length=20)]
-        prior = ParticlePosterior(prob, 200)
+        prior = Particles(prob, 200)
 
         result = run_adaptive(
             prob, candidates, prior, acquire;
@@ -504,13 +504,13 @@ const od_loglikelihood = OptimalDesign.loglikelihood
             headless=true,
         )
 
-        @test result.posterior isa ParticlePosterior
+        @test result.posterior isa Particles
         @test result.log isa ExperimentLog
         @test length(result.log) >= 1
         @test length(result.log) <= 5  # budget=5, cost=1 per step
 
         # Check posterior has been updated
-        μ = posterior_mean(result.posterior)
+        μ = mean(result.posterior)
         @test μ isa ComponentArray
     end
 
@@ -525,7 +525,7 @@ const od_loglikelihood = OptimalDesign.loglikelihood
             sigma=(θ, ξ) -> 0.05,
         )
 
-        post = ParticlePosterior(prob, 200)
+        post = Particles(prob, 200)
         grid = [(t=t,) for t in range(0.01, 0.5, length=50)]
 
         preds = posterior_predictions(prob, post, grid; n_samples=100)

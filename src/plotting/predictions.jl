@@ -5,7 +5,7 @@ Plot posterior credible bands with optional observation overlay.
 """
 function plot_credible_bands(
     prob::AbstractDesignProblem,
-    posterior::ParticlePosterior,
+    posterior::Particles,
     ξ_grid::AbstractVector;
     level::Real=0.9,
     observations=nothing,
@@ -52,7 +52,7 @@ Creates vertically stacked panels, one per posterior.
 """
 function plot_credible_bands(
     prob::AbstractDesignProblem,
-    posteriors::AbstractVector{<:ParticlePosterior},
+    posteriors::AbstractVector{<:Particles},
     ξ_grid::AbstractVector;
     labels::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
     colors=nothing,

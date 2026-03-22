@@ -39,7 +39,7 @@ function design(
     end
 
     # Draw a weighted subsample so uniform averaging in scoring is correct.
-    # For ParticlePosterior this resamples proportional to weights;
+    # For Particles this resamples proportional to weights;
     # for plain Vector it just returns the full set.
     particles = _get_particles(posterior; n=posterior_samples)
 
@@ -55,11 +55,11 @@ function design(
 end
 
 """
-Extract particles from posterior (supports ParticlePosterior or plain Vector).
+Extract particles from posterior (supports Particles or plain Vector).
 When `resample=true`, draws from the posterior proportional to weights
 so that a uniform average over the returned particles is correct.
 """
-function _get_particles(post::ParticlePosterior; n::Int=0)
+function _get_particles(post::Particles; n::Int=0)
     if n > 0
         # Weighted subsample: draw n particles proportional to weights
         # so that uniform averaging in the scoring loop is correct
@@ -380,7 +380,7 @@ Returns `(posterior=posterior, observations=[(ξ=..., y=...), ...])`.
 function run_batch(
     d::ExperimentalDesign,
     prob::AbstractDesignProblem,
-    posterior::ParticlePosterior,
+    posterior::Particles,
     acquire;
 )
     obs = NamedTuple[]
@@ -403,7 +403,7 @@ Equivalent to `d = design(...); run_batch(d, prob, posterior, acquire)`.
 function run_batch(
     prob::AbstractDesignProblem,
     candidates::AbstractVector{<:NamedTuple},
-    posterior::ParticlePosterior,
+    posterior::Particles,
     acquire;
     n::Int=1,
     kwargs...,

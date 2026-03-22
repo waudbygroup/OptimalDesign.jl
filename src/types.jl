@@ -50,9 +50,9 @@ struct ExperimentalDesign{T<:NamedTuple}
     allocation::Vector{Tuple{T, Int}}
 end
 
-# --- ParticlePosterior ---
+# --- Particles ---
 
-struct ParticlePosterior{T}
+struct Particles{T}
     particles::Vector{T}
     log_weights::Vector{Float64}
 end

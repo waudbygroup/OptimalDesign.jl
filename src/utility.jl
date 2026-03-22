@@ -53,7 +53,7 @@ end
 
 Score all candidates by expected utility. Returns a vector of scores.
 """
-function score_candidates(prob::AbstractDesignProblem, posterior::ParticlePosterior, candidates::AbstractVector; posterior_samples::Int=50)
+function score_candidates(prob::AbstractDesignProblem, posterior::Particles, candidates::AbstractVector; posterior_samples::Int=50)
     score_candidates(prob, posterior.particles, candidates; posterior_samples=posterior_samples)
 end
 

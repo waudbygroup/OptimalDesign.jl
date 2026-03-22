@@ -6,6 +6,7 @@ using ForwardDiff
 using LinearAlgebra
 using LogExpFunctions: logsumexp
 using Random
+import Statistics
 using Statistics: mean, median, quantile, std, var
 
 import CairoMakie
@@ -16,13 +17,13 @@ export DesignProblem, select,
        DCriterion, ACriterion, ECriterion
 
 # Posterior
-export ParticlePosterior
+export Particles
 
 # Design
 export ExperimentalDesign, design, run_batch, run_adaptive
 
 # Inference and analysis
-export posterior_mean, effective_sample_size,
+export effective_sample_size,
        posterior_predictions, credible_band,
        efficiency
 

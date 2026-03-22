@@ -33,7 +33,7 @@ Returns `(posterior=posterior, log=ExperimentLog)`.
 function run_adaptive(
     prob::AbstractDesignProblem,
     candidates::AbstractVector{<:NamedTuple},
-    posterior::ParticlePosterior,
+    posterior::Particles,
     acquire;
     budget::Real,
     posterior_samples::Int=50,
@@ -131,7 +131,7 @@ function run_adaptive(
 
                 # Periodic @info summary
                 if obs_count % 10 == 0
-                    μ = posterior_mean(posterior)
+                    μ = mean(posterior)
                     @info "  Step $obs_count/$(_est_total_steps(spent, budget, obs_count)): " *
                           "spent=$(round(spent; digits=2))/$budget, " *
                           "ESS=$(round(ess_after; digits=0)), " *
@@ -156,7 +156,7 @@ function run_adaptive(
     end
 
     # Final summary
-    μ_final = posterior_mean(posterior)
+    μ_final = mean(posterior)
     ess_final = effective_sample_size(posterior)
     @info "Experiment complete: $obs_count observations, " *
           "cost=$(round(spent; digits=2))/$budget, " *

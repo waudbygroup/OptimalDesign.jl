@@ -14,7 +14,7 @@ Returns a vector of derivatives (one per candidate).
 function gateaux_derivative(
     prob::AbstractDesignProblem,
     candidates::AbstractVector{<:NamedTuple},
-    posterior::ParticlePosterior,
+    posterior::Particles,
     d::ExperimentalDesign;
     kwargs...,
 )
@@ -158,7 +158,7 @@ Returns `(is_optimal, max_derivative, dimension)`.
 function verify_optimality(
     prob::AbstractDesignProblem,
     candidates::AbstractVector{<:NamedTuple},
-    posterior::ParticlePosterior,
+    posterior::Particles,
     d::ExperimentalDesign;
     posterior_samples::Int=50,
     tol::Float64=0.05,

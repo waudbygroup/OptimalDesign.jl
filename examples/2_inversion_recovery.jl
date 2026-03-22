@@ -48,7 +48,7 @@ prob = DesignProblem(
 
 # Candidate delay times: 0.01 to 5.0 seconds
 candidates = [(τ=τ,) for τ in range(0.01, 5.0, length=200)]
-prior = ParticlePosterior(prob, 1000)
+prior = Particles(prob, 1000)
 
 # Ground truth (unknown to design algorithm)
 θ_true = ComponentArray(A=1.0, B=2.0, R₁=1.3)
@@ -128,14 +128,14 @@ acquire = let θ = θ_true, σ = σ_true
     ξ -> θ.A - θ.B * exp(-θ.R₁ * ξ.τ) + σ * randn()
 end
 
-posterior_opt = ParticlePosterior(prob, 1000)
+posterior_opt = Particles(prob, 1000)
 result_opt = run_batch(d, prob, posterior_opt, acquire)
 
-posterior_unif = ParticlePosterior(prob, 1000)
+posterior_unif = Particles(prob, 1000)
 result_unif = run_batch(u, prob, posterior_unif, acquire)
 
-μ_opt = posterior_mean(result_opt.posterior)
-μ_unif = posterior_mean(result_unif.posterior)
+μ_opt = mean(result_opt.posterior)
+μ_unif = mean(result_unif.posterior)
 println("Posterior mean (optimal):  A=$(round(μ_opt.A; digits=3)), B=$(round(μ_opt.B; digits=3)), R₁=$(round(μ_opt.R₁; digits=3))")
 println("Posterior mean (uniform):  A=$(round(μ_unif.A; digits=3)), B=$(round(μ_unif.B; digits=3)), R₁=$(round(μ_unif.R₁; digits=3))")
 

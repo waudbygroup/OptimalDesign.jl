@@ -8,7 +8,7 @@ For vector models, returns a `Vector{Matrix{Float64}}` — one matrix per output
 """
 function posterior_predictions(
     prob::AbstractDesignProblem,
-    posterior::ParticlePosterior,
+    posterior::Particles,
     ξ_grid::AbstractVector;
     n_samples::Int=200,
 )

@@ -1,43 +1,60 @@
 """
-    ParticlePosterior(prob::AbstractDesignProblem, n::Int)
+    Particles(prob::AbstractDesignProblem, n::Int)
 
-Construct a ParticlePosterior by drawing n particles from the prior.
+Construct a Particles by drawing n particles from the prior.
 All particles have equal weight.
 """
-function ParticlePosterior(prob::AbstractDesignProblem, n::Int)
+function Particles(prob::AbstractDesignProblem, n::Int)
     particles = draw(prob.parameters, n)
     log_weights = fill(-log(n), n)
-    ParticlePosterior(particles, log_weights)
+    Particles(particles, log_weights)
 end
 
 """
-    sample(posterior::ParticlePosterior, n::Int)
+    sample(posterior::Particles, n::Int)
 
 Draw n particles from the posterior (with replacement, proportional to weights).
 """
-function sample(posterior::ParticlePosterior, n::Int)
+function sample(posterior::Particles, n::Int)
     w = exp.(posterior.log_weights .- logsumexp(posterior.log_weights))
     indices = systematic_resample(w, n)
     posterior.particles[indices]
 end
 
 """
-    posterior_mean(posterior::ParticlePosterior)
+    mean(p::Particles)
 
-Compute the weighted mean of the posterior particles.
+Weighted mean of the particles. Returns a `ComponentArray` with one entry per parameter.
 """
-function posterior_mean(posterior::ParticlePosterior)
-    w = exp.(posterior.log_weights .- logsumexp(posterior.log_weights))
-    result = sum(w[i] * posterior.particles[i] for i in eachindex(posterior.particles))
-    result
+function Statistics.mean(p::Particles)
+    w = exp.(p.log_weights .- logsumexp(p.log_weights))
+    sum(w[i] * p.particles[i] for i in eachindex(p.particles))
 end
 
 """
-    effective_sample_size(posterior::ParticlePosterior)
+    var(p::Particles)
+
+Weighted variance of the particles. Returns a `ComponentArray` with one entry per parameter.
+"""
+function Statistics.var(p::Particles)
+    w = exp.(p.log_weights .- logsumexp(p.log_weights))
+    μ = Statistics.mean(p)
+    sum(w[i] * (p.particles[i] .- μ).^2 for i in eachindex(p.particles))
+end
+
+"""
+    std(p::Particles)
+
+Weighted standard deviation of the particles. Returns a `ComponentArray` with one entry per parameter.
+"""
+Statistics.std(p::Particles) = sqrt.(Statistics.var(p))
+
+"""
+    effective_sample_size(posterior::Particles)
 
 Compute the effective sample size (ESS) of the weighted particles.
 """
-function effective_sample_size(posterior::ParticlePosterior)
+function effective_sample_size(posterior::Particles)
     lw = posterior.log_weights .- logsumexp(posterior.log_weights)
     exp(-logsumexp(2 .* lw))
 end
@@ -84,19 +101,19 @@ function _loglikelihood_gaussian(y::AbstractVector, ŷ::Real, σ)
 end
 
 """
-    update!(posterior::ParticlePosterior, prob::AbstractDesignProblem, ξ, y; ess_threshold=0.5, a=0.95)
+    update!(posterior::Particles, prob::AbstractDesignProblem, ξ, y; ess_threshold=0.5, a=0.95)
 
 Incorporate observation y at design point ξ. Delegates to the batch method
 with adaptive tempering, so even a single highly informative observation
 is tempered in gracefully.
 """
-function update!(posterior::ParticlePosterior, prob::AbstractDesignProblem, ξ, y;
+function update!(posterior::Particles, prob::AbstractDesignProblem, ξ, y;
                  ess_threshold::Float64=0.5, a::Float64=0.95)
     update!(posterior, prob, [(ξ=ξ, y=y)]; ess_threshold=ess_threshold, a=a)
 end
 
 """
-    update!(posterior::ParticlePosterior, prob::AbstractDesignProblem, data::AbstractVector{<:NamedTuple};
+    update!(posterior::Particles, prob::AbstractDesignProblem, data::AbstractVector{<:NamedTuple};
             ess_threshold=0.5, a=0.95)
 
 Batch update using adaptive likelihood tempering (SMC sampler).
@@ -108,7 +125,7 @@ step size Δβ is chosen by bisection so that the ESS stays just above
 
 Each element of `data` must have fields `ξ` (design point) and `y` (observation).
 """
-function update!(posterior::ParticlePosterior, prob::AbstractDesignProblem,
+function update!(posterior::Particles, prob::AbstractDesignProblem,
                  data::AbstractVector{<:NamedTuple};
                  ess_threshold::Float64=0.5, a::Float64=0.95)
     n = length(posterior.particles)
@@ -147,7 +164,7 @@ function update!(posterior::ParticlePosterior, prob::AbstractDesignProblem,
 end
 
 """Compute total log-likelihood of all data for each particle."""
-function _compute_total_ll(posterior::ParticlePosterior, prob::AbstractDesignProblem,
+function _compute_total_ll(posterior::Particles, prob::AbstractDesignProblem,
                            data::AbstractVector{<:NamedTuple})
     n = length(posterior.particles)
     total_ll = Vector{Float64}(undef, n)
@@ -265,7 +282,7 @@ derived from the prior bounds, preventing particles from leaving the support.
 - `prob`: DesignProblem (optional). Provides prior distributions for bound-aware transforms.
 - `a`: shrinkage parameter (default 0.98). Controls jitter magnitude: h² = 1 - a².
 """
-function resample!(posterior::ParticlePosterior; prob::Union{AbstractDesignProblem,Nothing}=nothing, a::Float64=0.98)
+function resample!(posterior::Particles; prob::Union{AbstractDesignProblem,Nothing}=nothing, a::Float64=0.98)
     n = length(posterior.particles)
     d = length(first(posterior.particles))
     w = exp.(posterior.log_weights .- logsumexp(posterior.log_weights))
@@ -353,7 +370,7 @@ Returns `(mean_residual, log_marginal)`:
 A running series of `log_marginal` values constitutes sequential Bayesian
 model checking. Sharp drops indicate observations surprising under the current model.
 """
-function observation_diagnostics(posterior::ParticlePosterior, prob::AbstractDesignProblem, ξ, y)
+function observation_diagnostics(posterior::Particles, prob::AbstractDesignProblem, ξ, y)
     n = length(posterior.particles)
 
     # Log marginal likelihood: logsumexp of weighted log-likelihoods

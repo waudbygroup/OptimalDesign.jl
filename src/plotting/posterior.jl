@@ -5,7 +5,7 @@ Plot histogram of posterior marginals for each parameter.
 Kept for backward compatibility — see `plot_corner` for the full corner plot.
 """
 function plot_posterior_marginals(
-    posterior::ParticlePosterior;
+    posterior::Particles;
     params::Union{Nothing,Vector{Symbol}}=nothing,
 )
     plot_corner(posterior; params=params)
@@ -17,7 +17,7 @@ end
 Corner plot (pair plot) showing 1D marginal histograms on the diagonal
 and 2D weighted scatter plots on the lower triangle.
 
-Accepts one or more `ParticlePosterior` objects for overlay comparison
+Accepts one or more `Particles` objects for overlay comparison
 (e.g. prior vs posterior, or optimal vs uniform).
 
 # Keyword arguments
@@ -29,7 +29,7 @@ Accepts one or more `ParticlePosterior` objects for overlay comparison
 - `level::Real = 0.9`: credible interval level for 1D marginals
 """
 function plot_corner(
-    posteriors::ParticlePosterior...;
+    posteriors::Particles...;
     params::Union{Nothing,Vector{Symbol}}=nothing,
     truth=nothing,
     labels::Union{Nothing,Vector{String}}=nothing,

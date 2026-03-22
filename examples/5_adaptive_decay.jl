@@ -58,7 +58,7 @@ println()
 # ═══════════════════════════════════════════════
 
 println("Running adaptive experiment (budget=$budget)...")
-prior_adaptive = ParticlePosterior(prob, 1000)
+prior_adaptive = Particles(prob, 1000)
 
 result = run_adaptive(
     prob, candidates, prior_adaptive, acquire;
@@ -73,7 +73,7 @@ log_adaptive = result.log
 
 n_adaptive = length(log_adaptive)
 spent_adaptive = sum(e.cost for e in log_adaptive)
-μ_adaptive = posterior_mean(posterior_adaptive)
+μ_adaptive = mean(posterior_adaptive)
 
 println("\nAdaptive results:")
 println("  Measurements: $n_adaptive")
@@ -85,14 +85,14 @@ println("  Posterior mean: A=$(round(μ_adaptive.A; digits=4)), R₂=$(round(μ_
 # ═══════════════════════════════════════════════
 
 println("\n--- Batch design comparison (n=$n_adaptive) ---")
-prior_batch = ParticlePosterior(prob, 1000)
+prior_batch = Particles(prob, 1000)
 
 batch_design = design(prob, candidates, prior_batch; n=n_adaptive)
 
-posterior_batch = ParticlePosterior(prob, 1000)
+posterior_batch = Particles(prob, 1000)
 result_batch = run_batch(batch_design, prob, posterior_batch, acquire)
 
-μ_batch = posterior_mean(result_batch.posterior)
+μ_batch = mean(result_batch.posterior)
 println("Batch results:")
 println("  Posterior mean: A=$(round(μ_batch.A; digits=4)), R₂=$(round(μ_batch.R₂; digits=2))")
 
@@ -158,14 +158,14 @@ fig4 = plot_residuals(log_adaptive)
 # --- Figure 5: ESS evolution ---
 
 println("\nRerunning adaptive experiment to track ESS evolution...")
-prior_ess = ParticlePosterior(prob, 1000)
+prior_ess = Particles(prob, 1000)
 ess_history = Float64[]
 r2_history = Float64[]
 
 for entry in log_adaptive
     OptimalDesign.update!(prior_ess, prob, entry.ξ, entry.y)
     push!(ess_history, effective_sample_size(prior_ess))
-    push!(r2_history, posterior_mean(prior_ess).R₂)
+    push!(r2_history, mean(prior_ess).R₂)
 end
 
 fig5 = Figure(size=(700, 500))

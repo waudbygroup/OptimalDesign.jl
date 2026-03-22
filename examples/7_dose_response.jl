@@ -50,7 +50,7 @@ end
 # ═══════════════════════════════════════════════
 
 n_obs = 20
-prior = ParticlePosterior(prob, 500)
+prior = Particles(prob, 500)
 
 println("\nCalculating batch design (n=$n_obs)...")
 d = design(prob, candidates, prior; n=n_obs, exchange_steps=200)

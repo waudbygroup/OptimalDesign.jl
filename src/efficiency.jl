@@ -11,7 +11,7 @@ function efficiency(
     d_b::ExperimentalDesign,
     prob::AbstractDesignProblem,
     candidates::AbstractVector{<:NamedTuple},
-    posterior::ParticlePosterior;
+    posterior::Particles;
     posterior_samples::Int=50,
 )
     particles = _get_particles(posterior)

@@ -46,7 +46,7 @@ candidates = [
     for t in range(0.001, 0.5, length=200)
 ]
 
-prior = ParticlePosterior(prob, 1000)
+prior = Particles(prob, 1000)
 
 acquire = let θ = θ_true, σ = σ_true
     ξ -> (ξ.i == 1 ? θ.A₁ * exp(-θ.R₂₁ * ξ.t) : θ.A₂ * exp(-θ.R₂₂ * ξ.t)) + σ * randn()
@@ -115,14 +115,14 @@ println("  Uniform needs ~$(round(1 / eff; digits=1))× more measurements to mat
 
 println("\n--- Simulated experiments ---")
 
-posterior_opt = ParticlePosterior(prob, 1000)
+posterior_opt = Particles(prob, 1000)
 result_opt = run_batch(d, prob, posterior_opt, acquire)
 
-posterior_unif = ParticlePosterior(prob, 1000)
+posterior_unif = Particles(prob, 1000)
 result_unif = run_batch(u, prob, posterior_unif, acquire)
 
-μ_opt = posterior_mean(result_opt.posterior)
-μ_unif = posterior_mean(result_unif.posterior)
+μ_opt = mean(result_opt.posterior)
+μ_unif = mean(result_unif.posterior)
 println("Posterior mean (optimal):  R₂₁=$(round(μ_opt.R₂₁; digits=2)), R₂₂=$(round(μ_opt.R₂₂; digits=2))")
 println("Posterior mean (uniform):  R₂₁=$(round(μ_unif.R₂₁; digits=2)), R₂₂=$(round(μ_unif.R₂₂; digits=2))")
 

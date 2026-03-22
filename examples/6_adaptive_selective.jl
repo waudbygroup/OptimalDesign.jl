@@ -51,7 +51,7 @@ println("Starting adaptive experiment with switching costs (budget=$budget)")
 println("True: A₁=$(θ_true.A₁), R₂₁=$(θ_true.R₂₁), A₂=$(θ_true.A₂), R₂₂=$(θ_true.R₂₂)")
 println()
 
-prior_adaptive = ParticlePosterior(prob, 1000)
+prior_adaptive = Particles(prob, 1000)
 
 result = run_adaptive(
     prob, candidates, prior_adaptive, acquire;
@@ -70,7 +70,7 @@ if n_adaptive == 0
     error("Adaptive experiment produced 0 observations — check select/cost configuration")
 end
 spent_adaptive = sum(e.cost for e in log_adaptive)
-μ_adaptive = posterior_mean(posterior_adaptive)
+μ_adaptive = mean(posterior_adaptive)
 
 n_decay1 = count(e -> e.ξ.i == 1, log_adaptive)
 n_decay2 = count(e -> e.ξ.i == 2, log_adaptive)
@@ -87,15 +87,15 @@ println("True values:    R₂₁=$(θ_true.R₂₁), R₂₂=$(θ_true.R₂₂)"
 # ═══════════════════════════════════════════════
 
 println("\n--- Batch design comparison (n=$n_adaptive) ---")
-prior_batch = ParticlePosterior(prob, 1000)
+prior_batch = Particles(prob, 1000)
 
 batch_design = design(prob, candidates, prior_batch;
     n=n_adaptive, exchange_steps=200)
 
-posterior_batch = ParticlePosterior(prob, 1000)
+posterior_batch = Particles(prob, 1000)
 result_batch = run_batch(batch_design, prob, posterior_batch, acquire)
 
-μ_batch = posterior_mean(result_batch.posterior)
+μ_batch = mean(result_batch.posterior)
 println("Batch results:")
 println("  Posterior mean: R₂₁=$(round(μ_batch.R₂₁; digits=2)), R₂₂=$(round(μ_batch.R₂₂; digits=2))")
 
@@ -244,7 +244,7 @@ end
 # --- Figure 5: ESS and posterior convergence ---
 
 println("\nRerunning adaptive experiment to track ESS evolution...")
-prior_ess = ParticlePosterior(prob, 1000)
+prior_ess = Particles(prob, 1000)
 ess_history = Float64[]
 r21_history = Float64[]
 r22_history = Float64[]
@@ -252,7 +252,7 @@ r22_history = Float64[]
 for entry in log_adaptive
     OptimalDesign.update!(prior_ess, prob, entry.ξ, entry.y)
     push!(ess_history, effective_sample_size(prior_ess))
-    μ = posterior_mean(prior_ess)
+    μ = mean(prior_ess)
     push!(r21_history, μ.R₂₁)
     push!(r22_history, μ.R₂₂)
 end
