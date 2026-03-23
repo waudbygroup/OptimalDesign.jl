@@ -24,23 +24,23 @@ The package is domain-agnostic. It provides the mathematical machinery for optim
 
 ```julia
 struct DesignProblem{F,J,S,T}
-    predict::F             # (θ, ξ) -> ŷ (scalar or vector)
-    jacobian::J            # (θ, ξ) -> J matrix, or nothing => ForwardDiff
-    sigma::S               # (θ, ξ) -> σ (scalar, vector, or matrix)
+    predict::F             # (θ, x) -> ŷ (scalar or vector)
+    jacobian::J            # (θ, x) -> J matrix, or nothing => ForwardDiff
+    sigma::S               # (θ, x) -> σ (scalar, vector, or matrix)
     parameters::NamedTuple # :name => prior (Distributions.jl)
     transformation::T      # θ -> τ(θ), defaults to identity
-    cost::Function         # (ξ_prev, ξ) -> time cost
-    constraint::Function   # (ξ, θ_est) -> Bool
+    cost::Function         # (x_prev, x) -> time cost
+    constraint::Function   # (x, θ_est) -> Bool
 end
 ```
 
 Three callables define the physics:
 
-**predict**: Maps parameters θ (ComponentArray) and design point ξ (NamedTuple) to predicted observations (scalar or vector). A closure that captures the physical model at construction time. Returns the signal only — no noise information.
+**predict**: Maps parameters θ (ComponentArray) and design point x (NamedTuple) to predicted observations (scalar or vector). A closure that captures the physical model at construction time. Returns the signal only — no noise information.
 
-**jacobian**: Maps (θ, ξ) to the Jacobian matrix ∂ŷ/∂θ. Defaults to `nothing`, meaning ForwardDiff is used automatically. An analytic Jacobian can be substantially faster — for example, exploiting matrix exponential structure in Bloch–McConnell models, or reusing eigendecompositions. Keeping the Jacobian separate from predict avoids AD entanglement with the noise.
+**jacobian**: Maps (θ, x) to the Jacobian matrix ∂ŷ/∂θ. Defaults to `nothing`, meaning ForwardDiff is used automatically. An analytic Jacobian can be substantially faster — for example, exploiting matrix exponential structure in Bloch–McConnell models, or reusing eigendecompositions. Keeping the Jacobian separate from predict avoids AD entanglement with the noise.
 
-**sigma**: Maps (θ, ξ) to the observation noise — a scalar σ (constant or parameter/design-dependent), a vector of per-element σ values (for vector observations), or a full covariance matrix. Defaults to `Returns(1.0)` (unit noise). This function is never differentiated — it is evaluated alongside the Jacobian to construct the weighted FIM, but ForwardDiff only touches predict (or is bypassed entirely when an analytic Jacobian is supplied).
+**sigma**: Maps (θ, x) to the observation noise — a scalar σ (constant or parameter/design-dependent), a vector of per-element σ values (for vector observations), or a full covariance matrix. Defaults to `Returns(1.0)` (unit noise). This function is never differentiated — it is evaluated alongside the Jacobian to construct the weighted FIM, but ForwardDiff only touches predict (or is bypassed entirely when an analytic Jacobian is supplied).
 
 The remaining fields:
 
@@ -48,7 +48,7 @@ The remaining fields:
 
 **transformation**: Maps the full parameter vector to quantities of interest. D-optimality on the transformed information matrix (via the Delta method) gives Ds-optimality as a special case. Defaults to identity.
 
-**cost**: Returns the time cost of measurement ξ given that the previous measurement was ξ_prev (receives `nothing` for the first measurement). Encodes both measurement-dependent costs and switching costs.
+**cost**: Returns the time cost of measurement x given that the previous measurement was x_prev (receives `nothing` for the first measurement). Encodes both measurement-dependent costs and switching costs.
 
 **constraint**: Returns `false` for design points where the forward model is untrustworthy given current parameter estimates. Re-evaluated as estimates refine.
 
@@ -60,32 +60,32 @@ Keyword arguments with sensible defaults:
 ```julia
 # Simplest: constant unit noise, ForwardDiff Jacobian, identity transformation
 prob = DesignProblem(
-    (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+    (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
     parameters = (A=Normal(1, 0.1), R₂=LogUniform(1, 50)),
 )
 
 # With analytic Jacobian and known constant noise
 prob = DesignProblem(
-    (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
-    jacobian = (θ, ξ) -> [exp(-θ.R₂ * ξ.t)  -θ.A * ξ.t * exp(-θ.R₂ * ξ.t)],
-    sigma = (θ, ξ) -> 0.05,
+    (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
+    jacobian = (θ, x) -> [exp(-θ.R₂ * x.t)  -θ.A * x.t * exp(-θ.R₂ * x.t)],
+    sigma = (θ, x) -> 0.05,
     parameters = (A=Normal(1, 0.1), R₂=LogUniform(1, 50)),
     transformation = DeltaMethod(select(:R₂)),
-    cost = (prev, ξ) -> ξ.t + 0.1,
+    cost = (prev, x) -> x.t + 0.1,
 )
 
 # Parameter-dependent noise (e.g. fitted rate with θ-dependent uncertainty)
 prob = DesignProblem(
-    (θ, ξ) -> forward_model(θ, ξ.Ω, ξ.ω₁),
-    sigma = (θ, ξ) -> fitting_uncertainty(θ, ξ),
+    (θ, x) -> forward_model(θ, x.Ω, x.ω₁),
+    sigma = (θ, x) -> fitting_uncertainty(θ, x),
     parameters = exchange_priors,
     transformation = DeltaMethod(select(:k_ex, :p_B, :Δω)),
 )
 
 # Vector-valued observations with per-element noise
 prob = DesignProblem(
-    (θ, ξ) -> [model(θ, ξ.x, T) for T in time_points],
-    sigma = (θ, ξ) -> fill(0.01, length(time_points)),
+    (θ, x) -> [model(θ, x.x, T) for T in time_points],
+    sigma = (θ, x) -> fill(0.01, length(time_points)),
     parameters = priors,
 )
 ```
@@ -167,7 +167,7 @@ Candidates can be regenerated between adaptive steps — refined near promising 
 abstract type Posterior end
 
 sample(posterior, n)              # -> vector of ComponentArrays
-update!(posterior, prob, ξ, y)    # incorporate observation
+update!(posterior, prob, x, y)    # incorporate observation
 mean(posterior)          # -> ComponentArray
 ```
 
@@ -194,16 +194,16 @@ ComponentArray (from ComponentArrays.jl) is used internally for parameter vector
 
 ### Fisher Information Matrix
 
-The FIM at a single (θ, ξ) pair:
+The FIM at a single (θ, x) pair:
 
 ```julia
-function information(prob, θ, ξ)
+function information(prob, θ, x)
     J = if prob.jacobian === nothing
-        ForwardDiff.jacobian(θ_ -> prob.predict(θ_, ξ), θ)
+        ForwardDiff.jacobian(θ_ -> prob.predict(θ_, x), θ)
     else
-        prob.jacobian(θ, ξ)
+        prob.jacobian(θ, x)
     end
-    σ = prob.sigma(θ, ξ)
+    σ = prob.sigma(θ, x)
     weighted_fim(J, σ)
 end
 ```
@@ -225,9 +225,9 @@ $$U(\xi) = \mathbb{E}_{\theta \sim \pi}\left[\Phi\!\left(M_\tau(\xi, \theta)\rig
 Evaluated by Monte Carlo over posterior samples, with mini-batch support:
 
 ```julia
-function expected_utility(prob, criterion, particles, ξ; posterior_samples=50)
+function expected_utility(prob, criterion, particles, x; posterior_samples=50)
     idx = rand(1:length(particles), posterior_samples)
-    mean(criterion(transform(prob, information(prob, particles[i], ξ))) for i in idx)
+    mean(criterion(transform(prob, information(prob, particles[i], x))) for i in idx)
 end
 ```
 
@@ -250,21 +250,21 @@ EIG is appropriate for adaptive sequential design. For batch design, FIM-based w
 Each observation is scored against the current posterior to detect model deviations:
 
 ```julia
-function observation_diagnostics(post, prob, ξ, y)
+function observation_diagnostics(post, prob, x, y)
     log_ml = logsumexp(
-        post.log_weights[i] + loglikelihood(prob, post.particles[i], ξ, y)
+        post.log_weights[i] + loglikelihood(prob, post.particles[i], x, y)
         for i in eachindex(post.particles)
     )
     w = exp.(post.log_weights)
     mean_residual = sum(
-        w[i] * (y - prob.predict(post.particles[i], ξ))
+        w[i] * (y - prob.predict(post.particles[i], x))
         for i in eachindex(post.particles)
     )
     (mean_residual=mean_residual, log_marginal=log_ml)
 end
 ```
 
-The `loglikelihood` function uses `prob.sigma(θ, ξ)` to construct the noise model for the likelihood calculation — the same sigma used for design planning. When observations carry their own uncertainty (structured observations from an intermediate fitting step, e.g. `(value=R, σ=σ_R)`), the likelihood uses the realised σ from the observation instead.
+The `loglikelihood` function uses `prob.sigma(θ, x)` to construct the noise model for the likelihood calculation — the same sigma used for design planning. When observations carry their own uncertainty (structured observations from an intermediate fitting step, e.g. `(value=R, σ=σ_R)`), the likelihood uses the realised σ from the observation instead.
 
 A running series of `log_marginal` values constitutes sequential Bayesian model checking. Sharp drops indicate observations surprising under the current model, flagging systematic model failure.
 
@@ -284,9 +284,9 @@ function select(
     criterion = DCriterion(),
     budget = Inf,
     posterior_samples = 50,
-    ξ_prev = nothing,
+    x_prev = nothing,
 )
-    # Returns: Vector{Tuple{NamedTuple, Int}} — (ξ, count) pairs
+    # Returns: Vector{Tuple{NamedTuple, Int}} — (x, count) pairs
 end
 ```
 
@@ -304,7 +304,7 @@ end
 Mini-batch evaluation (random subset of posterior particles) provides unbiased utility estimates at reduced cost. Two strategies:
 
 - **Coarse-then-refine**: Score all candidates with small batch, re-score top candidates with full particle set.
-- **Stochastic gradient optimisation (SGO)**: Gradient ascent on expected utility treating ξ as continuous, using mini-batch gradients via ForwardDiff. Complements discrete candidate evaluation for high-dimensional or continuous refinement.
+- **Stochastic gradient optimisation (SGO)**: Gradient ascent on expected utility treating x as continuous, using mini-batch gradients via ForwardDiff. Complements discrete candidate evaluation for high-dimensional or continuous refinement.
 
 
 ## Acquisition
@@ -314,18 +314,18 @@ The acquisition function is a user-provided callable, curried over any external 
 ```julia
 # Simulated (for development and validation)
 acquire = let θ_true = true_params, pred = predict, σ = 0.05
-    ξ -> pred(θ_true, ξ) + σ * randn()
+    x -> pred(θ_true, x) + σ * randn()
 end
 
 # Manual entry
-acquire = ξ -> begin
-    println("Measure at: ", ξ)
+acquire = x -> begin
+    println("Measure at: ", x)
     parse(Float64, readline())
 end
 
 # Domain-specific instrument (user code, not in package)
 acquire = let conn = instrument_connection
-    ξ -> run_measurement(conn, ξ)
+    x -> run_measurement(conn, x)
 end
 ```
 
@@ -349,13 +349,13 @@ function run_experiment(
     prob::DesignProblem,
     candidates,
     posterior,
-    acquire;                    # callable: ξ -> y
+    acquire;                    # callable: x -> y
     budget,
     criterion = DCriterion(),
     posterior_samples = 50,
     n_per_step = 1,
     headless = false,           # suppress GUI for testing
-    prediction_grid = nothing,  # dense ξ grid for credible band plots
+    prediction_grid = nothing,  # dense x grid for credible band plots
 )
     # Returns: (posterior=posterior, log=ExperimentLog)
 end
@@ -389,7 +389,7 @@ For post-hoc analysis and publication figures (CairoMakie backend):
 Building blocks:
 
 ```julia
-posterior_predictions(prob, posterior, ξ_grid; n_samples=200)
+posterior_predictions(prob, posterior, x_grid; n_samples=200)
 credible_band(predictions; level=0.9)  # -> (lower, median, upper)
 ```
 
@@ -398,7 +398,7 @@ credible_band(predictions; level=0.9)  # -> (lower, median, upper)
 
 ```julia
 struct ExperimentLog
-    history::Vector{NamedTuple}  # (ξ, y, cost, diagnostics) per step
+    history::Vector{NamedTuple}  # (x, y, cost, diagnostics) per step
 end
 ```
 
@@ -413,7 +413,7 @@ The physical model is absorbed into the predict closure. The package never sees 
 
 ```julia
 solver = SomePhysicsSolver(config...)
-predict = (θ, ξ) -> solver(θ, ξ.x, ξ.t)
+predict = (θ, x) -> solver(θ, x.x, x.t)
 prob = DesignProblem(predict, parameters=...)
 ```
 
@@ -422,10 +422,10 @@ prob = DesignProblem(predict, parameters=...)
 When the forward model has exploitable structure, an analytic Jacobian avoids ForwardDiff overhead. The Jacobian is a separate callable, keeping predict clean:
 
 ```julia
-predict = (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t)
-jac = (θ, ξ) -> begin
-    e = exp(-θ.R₂ * ξ.t)
-    [e  -θ.A * ξ.t * e]   # 1×2 for scalar observation, 2 parameters
+predict = (θ, x) -> θ.A * exp(-θ.R₂ * x.t)
+jac = (θ, x) -> begin
+    e = exp(-θ.R₂ * x.t)
+    [e  -θ.A * x.t * e]   # 1×2 for scalar observation, 2 parameters
 end
 
 prob = DesignProblem(predict, jacobian=jac, parameters=...)
@@ -438,10 +438,10 @@ ForwardDiff can be used to validate analytic Jacobians during testing.
 Experiment identity is a field on candidates. The predict function branches on it.
 
 ```julia
-predict = (θ, ξ) -> if ξ.experiment == :A
-    model_a(θ, ξ.x, ξ.t)
+predict = (θ, x) -> if x.experiment == :A
+    model_a(θ, x.x, x.t)
 else
-    model_b(θ, ξ.x)
+    model_b(θ, x.x)
 end
 candidates = vcat(candidates_A, candidates_B)
 ```
@@ -453,8 +453,8 @@ Cost and constraint functions dispatch on the same field.
 Sample/compound index is a field on candidates. Switching costs are handled by the cost function.
 
 ```julia
-predict = (θ, ξ) -> measure(θ.samples[ξ.sample], ξ.x)
-cost = (prev, ξ) -> 1.5 + (prev !== nothing && prev.sample != ξ.sample ? 300.0 : 0.0)
+predict = (θ, x) -> measure(θ.samples[x.sample], x.x)
+cost = (prev, x) -> 1.5 + (prev !== nothing && prev.sample != x.sample ? 300.0 : 0.0)
 ```
 
 ### Heteroscedastic / Parameter-Dependent Noise
@@ -463,11 +463,11 @@ When observation uncertainty depends on what you're measuring, sigma encodes thi
 
 ```julia
 # Noise depends on design point and parameters
-sigma = (θ, ξ) -> fitting_uncertainty(θ, ξ)
+sigma = (θ, x) -> fitting_uncertainty(θ, x)
 
 # For posterior updating, acquire returns structured observation
-acquire = ξ -> begin
-    data = measure(ξ)
+acquire = x -> begin
+    data = measure(x)
     val, σ = fit_and_estimate_uncertainty(data)
     (value=val, σ=σ)
 end
@@ -497,11 +497,11 @@ Simplest case. One design variable (time t), two parameters (A, R₂), interest 
 
 ```julia
 prob = DesignProblem(
-    (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+    (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
     parameters = (A=Normal(1, 0.1), R₂=LogUniform(1, 50)),
     transformation = DeltaMethod(select(:R₂)),
-    sigma = (θ, ξ) -> 0.05,
-    cost = (prev, ξ) -> ξ.t + 0.1,
+    sigma = (θ, x) -> 0.05,
+    cost = (prev, x) -> x.t + 0.1,
 )
 candidates = [(t=t,) for t in range(0.001, 0.5, length=200)]
 prior = Particles(prob, 1000)
@@ -523,22 +523,22 @@ Three parameters (R₁, A, B), Ds-optimality via transformation onto R₁. Analy
 
 ```julia
 prob = DesignProblem(
-    (θ, ξ) -> θ.A - θ.B * exp(-θ.R₁ * ξ.τ),
-    jacobian = (θ, ξ) -> begin
-        e = exp(-θ.R₁ * ξ.τ)
-        [1.0  -e  θ.B * ξ.τ * e]
+    (θ, x) -> θ.A - θ.B * exp(-θ.R₁ * x.τ),
+    jacobian = (θ, x) -> begin
+        e = exp(-θ.R₁ * x.τ)
+        [1.0  -e  θ.B * x.τ * e]
     end,
     parameters = (A=Normal(1, 0.1), B=Normal(2, 0.1), R₁=LogUniform(0.1, 5)),
     transformation = DeltaMethod(select(:R₁)),
-    cost = (prev, ξ) -> 1.0 + ξ.τ,
+    cost = (prev, x) -> 1.0 + x.τ,
 )
 candidates = [(τ=τ,) for τ in range(0.01, 5.0, length=200)]
 
 # Test: analytic Jacobian matches ForwardDiff
 θ_test = draw(prob.parameters)
-ξ_test = candidates[50]
-J_analytic = prob.jacobian(θ_test, ξ_test)
-J_ad = ForwardDiff.jacobian(θ_ -> prob.predict(θ_, ξ_test), θ_test)
+x_test = candidates[50]
+J_analytic = prob.jacobian(θ_test, x_test)
+J_ad = ForwardDiff.jacobian(θ_ -> prob.predict(θ_, x_test), θ_test)
 @test J_analytic ≈ J_ad
 ```
 
@@ -551,13 +551,13 @@ Two exponential decays observed simultaneously as a vector (y₁, y₂) at a sin
 
 ```julia
 prob = DesignProblem(
-    (θ, ξ) -> [θ.A₁ * exp(-θ.R₂₁ * ξ.t),
-               θ.A₂ * exp(-θ.R₂₂ * ξ.t)],
+    (θ, x) -> [θ.A₁ * exp(-θ.R₂₁ * x.t),
+               θ.A₂ * exp(-θ.R₂₂ * x.t)],
     parameters = (A₁=Normal(1, 0.1), R₂₁=LogUniform(1, 50),
                   A₂=Normal(1, 0.1), R₂₂=LogUniform(1, 50)),
     transformation = DeltaMethod(select(:R₂₁, :R₂₂)),
-    sigma = (θ, ξ) -> [0.05, 0.05],     # per-element noise
-    cost = (prev, ξ) -> ξ.t + 0.1,
+    sigma = (θ, x) -> [0.05, 0.05],     # per-element noise
+    cost = (prev, x) -> x.t + 0.1,
 )
 candidates = [(t=t,) for t in range(0.001, 0.5, length=200)]
 
@@ -575,16 +575,16 @@ Same two decays, but now a control variable `i ∈ {1, 2}` selects which one is 
 
 ```julia
 prob = DesignProblem(
-    (θ, ξ) -> if ξ.i == 1
-        θ.A₁ * exp(-θ.R₂₁ * ξ.t)
+    (θ, x) -> if x.i == 1
+        θ.A₁ * exp(-θ.R₂₁ * x.t)
     else
-        θ.A₂ * exp(-θ.R₂₂ * ξ.t)
+        θ.A₂ * exp(-θ.R₂₂ * x.t)
     end,
     parameters = (A₁=Normal(1, 0.1), R₂₁=LogUniform(1, 50),
                   A₂=Normal(1, 0.1), R₂₂=LogUniform(1, 50)),
     transformation = DeltaMethod(select(:R₂₁, :R₂₂)),
-    sigma = (θ, ξ) -> 0.05,
-    cost = (prev, ξ) -> ξ.t + 0.1,
+    sigma = (θ, x) -> 0.05,
+    cost = (prev, x) -> x.t + 0.1,
 )
 candidates = [
     (i=i, t=t)
@@ -612,16 +612,16 @@ Uses Example 1's problem setup but runs a full adaptive experiment against a sim
 
 # Simulated acquisition
 acquire = let θ = θ_true, σ = 0.05
-    ξ -> θ.A * exp(-θ.R₂ * ξ.t) + σ * randn()
+    x -> θ.A * exp(-θ.R₂ * x.t) + σ * randn()
 end
 
 # Set up problem and prior
 prob = DesignProblem(
-    (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+    (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
     parameters = (A=Normal(1, 0.1), R₂=LogUniform(1, 50)),
     transformation = DeltaMethod(select(:R₂)),
-    sigma = (θ, ξ) -> 0.05,
-    cost = (prev, ξ) -> ξ.t + 0.1,
+    sigma = (θ, x) -> 0.05,
+    cost = (prev, x) -> x.t + 0.1,
 )
 candidates = [(t=t,) for t in range(0.001, 0.5, length=200)]
 prior = Particles(prob, 1000)
@@ -655,18 +655,18 @@ Uses Example 4's problem but runs adaptively, demonstrating how the selector bal
 θ_true = ComponentArray(A₁=1.0, R₂₁=10.0, A₂=1.0, R₂₂=40.0)
 
 acquire = let θ = θ_true, σ = 0.05
-    ξ -> (ξ.i == 1 ? θ.A₁ * exp(-θ.R₂₁ * ξ.t) : θ.A₂ * exp(-θ.R₂₂ * ξ.t)) + σ * randn()
+    x -> (x.i == 1 ? θ.A₁ * exp(-θ.R₂₁ * x.t) : θ.A₂ * exp(-θ.R₂₂ * x.t)) + σ * randn()
 end
 
 prob = DesignProblem(
-    (θ, ξ) -> ξ.i == 1 ? θ.A₁ * exp(-θ.R₂₁ * ξ.t) : θ.A₂ * exp(-θ.R₂₂ * ξ.t),
+    (θ, x) -> x.i == 1 ? θ.A₁ * exp(-θ.R₂₁ * x.t) : θ.A₂ * exp(-θ.R₂₂ * x.t),
     parameters = (A₁=Normal(1, 0.1), R₂₁=LogUniform(1, 50),
                   A₂=Normal(1, 0.1), R₂₂=LogUniform(1, 50)),
     transformation = DeltaMethod(select(:R₂₁, :R₂₂)),
-    sigma = (θ, ξ) -> 0.05,
-    cost = (prev, ξ) -> begin
-        t_measure = ξ.t + 0.1
-        t_switch = (prev !== nothing && prev.i != ξ.i) ? 1.0 : 0.0
+    sigma = (θ, x) -> 0.05,
+    cost = (prev, x) -> begin
+        t_measure = x.t + 0.1
+        t_switch = (prev !== nothing && prev.i != x.i) ? 1.0 : 0.0
         t_measure + t_switch
     end,
 )
@@ -695,10 +695,10 @@ Four parameters, full D-optimality. Validates against Kirstine.jl published resu
 
 ```julia
 prob = DesignProblem(
-    (θ, ξ) -> θ.E0 + θ.Emax * ξ.dose^θ.h / (θ.ED50^θ.h + ξ.dose^θ.h),
+    (θ, x) -> θ.E0 + θ.Emax * x.dose^θ.h / (θ.ED50^θ.h + x.dose^θ.h),
     parameters = (E0=Normal(1, 0.5), Emax=Normal(2, 0.5),
                   ED50=LogNormal(-1, 0.5), h=LogNormal(1, 0.5)),
-    cost = (prev, ξ) -> 1.0,
+    cost = (prev, x) -> 1.0,
 )
 candidates = [(dose=d,) for d in range(0, 1, length=50)]
 ```
@@ -724,11 +724,11 @@ candidates = [(dose=d,) for d in range(0, 1, length=50)]
 Implement the core type definitions and FIM computation. This is the mathematical foundation everything else builds on.
 
 1. Package scaffolding: `Project.toml`, module structure, CI.
-2. `DesignProblem` struct with keyword constructor and defaults (`jacobian=nothing`, `sigma=Returns(1.0)`, `transformation=Identity()`, `cost=(prev,ξ)->1.0`, `constraint=(ξ,θ)->true`).
+2. `DesignProblem` struct with keyword constructor and defaults (`jacobian=nothing`, `sigma=Returns(1.0)`, `transformation=Identity()`, `cost=(prev,x)->1.0`, `constraint=(x,θ)->true`).
 3. `Transformation`: `Identity`, `DeltaMethod` with `select()` convenience.
 4. `DesignCriterion`: `DCriterion`, `ACriterion`, `ECriterion`.
 5. ComponentArray integration: constructor that draws from prior NamedTuple.
-6. `information(prob, θ, ξ)`: Jacobian dispatch (ForwardDiff or analytic), sigma evaluation, weighted FIM construction (`J'Σ⁻¹J`).
+6. `information(prob, θ, x)`: Jacobian dispatch (ForwardDiff or analytic), sigma evaluation, weighted FIM construction (`J'Σ⁻¹J`).
 7. Transformed information matrix via Delta method.
 8. `expected_utility` with mini-batch support.
 

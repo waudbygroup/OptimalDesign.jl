@@ -12,45 +12,50 @@ y = A \exp(-R_2 \, t) + \varepsilon, \qquad \varepsilon \sim \mathcal{N}(0, \sig
 
 We want to estimate ``R_2`` as precisely as possible (Ds-optimality), treating ``A`` as a nuisance parameter.
 
-## Problem setup
+## Setup
 
-```julia
+```@example batch
 using OptimalDesign
-using ComponentArrays, Distributions
+using CairoMakie
+using ComponentArrays
+using Distributions
+using Random; Random.seed!(42) # hide
 
+function model(θ, x)
+    θ.A * exp(-θ.R₂ * x.t)
+end
+
+# Ground truth (unknown to the design algorithm)
+θ_true = ComponentArray(A = 1.0, R₂ = 25.0)
+σ = 0.1
+acquire(x) = model(θ_true, x) + σ * randn()
+
+# Design problem: model, priors, what to estimate
 prob = DesignProblem(
-    (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+    model,
     parameters = (A = LogUniform(0.1, 10), R₂ = Uniform(1, 50)),
     transformation = select(:R₂),
-    sigma = (θ, ξ) -> 0.1,
+    sigma = Returns(σ),
 )
 
-candidates = [(t = t,) for t in range(0.001, 0.5, length = 200)]
+candidates = candidate_grid(t = range(0.001, 0.5, length = 200))
 prior = Particles(prob, 1000)
+nothing # hide
 ```
 
 Key choices:
 
 - `select(:R₂)` tells the algorithm we care about ``R_2`` — this switches from D-optimal to Ds-optimal design
 - The prior distributions on ``A`` and ``R_2`` define the Bayesian averaging: the design will be good across the full range of plausible parameter values, not just at a single guess
-- `sigma` is constant here but can depend on ``\theta`` and ``\xi``
+- `sigma` is constant here but can depend on ``\theta`` and ``x``
 
 !!! tip "D-optimal vs Ds-optimal"
     Omit the `transformation` keyword (or set `transformation = Identity()`) to get a full D-optimal design that treats all parameters equally. With `select(:R₂)`, the design focuses information on ``R_2`` and may sacrifice some precision on ``A``.
 
 ## Computing the design
 
-```julia
-d = design(prob, candidates, prior; n = 20, exchange_steps = 200)
-```
-
-This runs the exchange algorithm to find the optimal allocation of 20 measurements across the candidate time points. The result displays as:
-
-```
-ExperimentalDesign: 20 measurements at 3 support points
-  t=0.001   ×7  ███████
-  t=0.0416  ×6  ██████
-  t=0.5     ×7  ███████
+```@example batch
+ξ = design(prob, candidates, prior; n = 20, exchange_steps = 200)
 ```
 
 The Ds-optimal design concentrates measurements at two extremes (very short and very long times) with a cluster near ``1/R_2``. This is characteristic of designs for exponential models — short times pin down the amplitude, long times pin down the rate.
@@ -59,91 +64,62 @@ The Ds-optimal design concentrates measurements at two extremes (very short and 
 
 The General Equivalence Theorem provides a certificate. If the maximum Gateaux derivative equals the transformed dimension ``q``, the design is optimal:
 
-```julia
-opt = OptimalDesign.verify_optimality(prob, candidates, prior, d;
+```@example batch
+opt = verify_optimality(prob, candidates, prior, ξ;
     posterior_samples = 1000)
-
-opt.is_optimal      # true
-opt.max_derivative   # ≈ q
-opt.dimension        # q = 1 for select(:R₂)
+opt
 ```
 
-Visualise with:
+Visualise the Gateaux derivative — it should touch the ``q`` bound at the support points and lie below it everywhere else:
 
-```julia
-gd = OptimalDesign.gateaux_derivative(prob, candidates, prior, d;
-    posterior_samples = 1000)
-
-fig = OptimalDesign.plot_gateaux(candidates, gd, opt.dimension)
+```@example batch
+plot_gateaux(opt)
 ```
-
-The Gateaux derivative should touch the ``q`` bound at the support points and lie below it everywhere else.
 
 ## Efficiency comparison
 
 How much better is the optimal design than uniform spacing?
 
-```julia
-u = OptimalDesign.uniform_allocation(candidates, 20)
+```@example batch
+ξ_unif = uniform_allocation(candidates, 20)
 
-eff = efficiency(u, d, prob, candidates, prior; posterior_samples = 1000)
-# eff ≈ 0.3–0.5 typically
+eff = efficiency(ξ_unif, ξ, prob, candidates, prior; posterior_samples = 1000)
+nothing # hide
 ```
-
-An efficiency of 0.4 means the uniform design would need roughly ``1/0.4 = 2.5\times`` more measurements to match the optimal design's precision on ``R_2``.
 
 ## Simulated acquisition
 
-Define a ground truth and an acquisition function, then run the experiment:
+Run the experiment with both designs and compare:
 
-```julia
-θ_true = ComponentArray(A = 1.0, R₂ = 25.0)
-acquire = ξ -> θ_true.A * exp(-θ_true.R₂ * ξ.t) + 0.1 * randn()
-
+```@example batch
 # Optimal design
-posterior_opt = Particles(prob, 1000)
-result_opt = run_batch(d, prob, posterior_opt, acquire)
+result_opt = run_batch(ξ, prob, prior, acquire)
 
 # Uniform design
-posterior_unif = Particles(prob, 1000)
-result_unif = run_batch(u, prob, posterior_unif, acquire)
+result_unif = run_batch(ξ_unif, prob, prior, acquire)
+nothing # hide
 ```
 
-Compare the posteriors:
+## Credible bands
 
-```julia
-mean(result_opt.posterior)   # ≈ (A = 1.0, R₂ = 25.0)
-mean(result_unif.posterior)  # less precise on R₂
+```@example batch
+plot_credible_bands(prob, result_opt, result_unif;
+    labels = ["Optimal (20 obs)", "Uniform (20 obs)"], truth = θ_true)
 ```
 
-## Visualisation
+## Corner plots
 
-### Credible bands
+Prior vs optimal posterior:
 
-```julia
-grid = [(t = t,) for t in range(0.001, 0.5, length = 100)]
-
-fig = OptimalDesign.plot_credible_bands(prob,
-    [prior, result_opt.posterior, result_unif.posterior], grid;
-    labels = ["Prior", "Optimal (20 obs)", "Uniform (20 obs)"],
-    truth = θ_true,
-    observations = [nothing, result_opt.observations, result_unif.observations])
+```@example batch
+plot_corner(result_opt; truth = θ_true)
 ```
 
-### Corner plots
+Optimal vs uniform posterior:
 
-```julia
-# Prior vs optimal posterior
-fig = plot_corner(prior, result_opt.posterior;
-    params = [:A, :R₂], labels = ["Prior", "Optimal"],
-    truth = (A = 1.0, R₂ = 25.0))
-
-# Optimal vs uniform posterior
-fig = plot_corner(result_unif.posterior, result_opt.posterior;
-    params = [:A, :R₂], labels = ["Uniform", "Optimal"],
-    truth = (A = 1.0, R₂ = 25.0))
+```@example batch
+plot_corner(result_unif, result_opt;
+    labels = ["Uniform", "Optimal"], truth = θ_true)
 ```
 
-The corner plot shows the prior (broad, diffuse) contracting to a tight posterior around the true values. The optimal design produces a tighter posterior on ``R_2`` than the uniform design — exactly as the efficiency ratio predicted.
-
-See [`examples/1_exponential_decay.jl`](https://github.com/your-org/OptimalDesign.jl/blob/main/examples/1_exponential_decay.jl) for the full runnable script.
+The corner plot shows the prior (broad, diffuse) contracting to a tight posterior around the true values. The optimal design produces a tighter posterior on ``R_2`` than the uniform design — exactly as the efficiency ratio modeled.

@@ -24,37 +24,40 @@ using GLMakie
 Random.seed!(42)
 
 # ═══════════════════════════════════════════════
-# 1. Problem setup
+# 1. The model and ground truth
 # ═══════════════════════════════════════════════
 
-prob = DesignProblem(
-    (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
-    parameters=(A=LogUniform(0.1, 10), R₂=Uniform(1, 50)),
-    transformation=select(:R₂),
-    sigma=(θ, ξ) -> 0.2,
-    cost=ξ -> ξ.t + 1,
-)
-
-candidates = [(t=t,) for t in range(0.001, 0.5, length=200)]
+function model(θ, x)
+    θ.A * exp(-θ.R₂ * x.t)
+end
 
 # Ground truth (unknown to algorithm)
 θ_true = ComponentArray(A=2, R₂=42.0)
 σ_true = 0.1
-
 budget = 100.0
 
 # Simulated acquisition function (closure over ground truth)
-acquire = let θ = θ_true, σ = σ_true
-    ξ -> θ.A * exp(-θ.R₂ * ξ.t) + σ * randn()
-end
+acquire(x) = model(θ_true, x) + σ_true * randn()
 
-println("Problem: y = A exp(-R₂ t) + noise")
-println("Truth:   A = $(θ_true.A), R₂ = $(θ_true.R₂)")
-println("Design:  Adaptive sequential, Ds-optimal for R₂")
-println()
+println("Truth: A = $(θ_true.A), R₂ = $(θ_true.R₂)")
 
 # ═══════════════════════════════════════════════
-# 2. Run adaptive experiment
+# 2. Design problem and prior
+# ═══════════════════════════════════════════════
+
+prob = DesignProblem(
+    model,
+    parameters=(A=LogUniform(0.1, 10), R₂=Uniform(1, 50)),
+    transformation=select(:R₂),
+    sigma=Returns(0.2),
+    cost=x -> x.t + 1,
+)
+display(prob)
+
+candidates = candidate_grid(t=range(0.001, 0.5, length=200))
+
+# ═══════════════════════════════════════════════
+# 3. Run adaptive experiment
 # ═══════════════════════════════════════════════
 
 println("Running adaptive experiment (budget=$budget)...")
@@ -68,38 +71,30 @@ result = run_adaptive(
     record_posterior=true,
 )
 
+display(result)
+
 posterior_adaptive = result.posterior
 log_adaptive = result.log
-
 n_adaptive = length(log_adaptive)
-spent_adaptive = sum(e.cost for e in log_adaptive)
-μ_adaptive = mean(posterior_adaptive)
-
-println("\nAdaptive results:")
-println("  Measurements: $n_adaptive")
-println("  Budget spent: $(round(spent_adaptive; digits=2)) / $budget")
-println("  Posterior mean: A=$(round(μ_adaptive.A; digits=4)), R₂=$(round(μ_adaptive.R₂; digits=2))")
 
 # ═══════════════════════════════════════════════
-# 3. Batch design for comparison (same n)
+# 4. Batch design for comparison (same n)
 # ═══════════════════════════════════════════════
 
 println("\n--- Batch design comparison (n=$n_adaptive) ---")
 prior_batch = Particles(prob, 1000)
 
-batch_design = design(prob, candidates, prior_batch; n=n_adaptive)
+ξ_batch = design(prob, candidates, prior_batch; n=n_adaptive)
 
-posterior_batch = Particles(prob, 1000)
-result_batch = run_batch(batch_design, prob, posterior_batch, acquire)
+result_batch = run_batch(ξ_batch, prob, prior_batch, acquire)
+display(result_batch)
 
+# ═══════════════════════════════════════════════
+# 5. Comparison summary
+# ═══════════════════════════════════════════════
+
+μ_adaptive = mean(result.posterior)
 μ_batch = mean(result_batch.posterior)
-println("Batch results:")
-println("  Posterior mean: A=$(round(μ_batch.A; digits=4)), R₂=$(round(μ_batch.R₂; digits=2))")
-
-# ═══════════════════════════════════════════════
-# 4. Comparison summary
-# ═══════════════════════════════════════════════
-
 err_adaptive = abs(μ_adaptive.R₂ - θ_true.R₂)
 err_batch = abs(μ_batch.R₂ - θ_true.R₂)
 
@@ -109,11 +104,10 @@ println("  Batch    |R₂ error|: $(round(err_batch; digits=2))")
 println("  (Both use $n_adaptive measurements)")
 
 # ═══════════════════════════════════════════════
-# 5. Plots
+# 6. Plots
 # ═══════════════════════════════════════════════
 
 println("\nGenerating plots...")
-prediction_grid = [(t=t,) for t in range(0.001, 0.5, length=100)]
 
 # --- Figure 1: Adaptive design trajectory ---
 
@@ -121,14 +115,14 @@ fig1 = Figure(size=(700, 500))
 
 ax1a = GLMakie.Axis(fig1[1, 1], ylabel="Design time t",
     title="Adaptive Design Trajectory")
-scatter!(ax1a, 1:n_adaptive, [e.ξ.t for e in log_adaptive],
+scatter!(ax1a, 1:n_adaptive, [e.x.t for e in log_adaptive],
     color=1:n_adaptive, colormap=:viridis, markersize=8)
-lines!(ax1a, 1:n_adaptive, [e.ξ.t for e in log_adaptive],
+lines!(ax1a, 1:n_adaptive, [e.x.t for e in log_adaptive],
     color=:gray, linewidth=0.5)
 
 ax1b = GLMakie.Axis(fig1[2, 1], xlabel="Step", ylabel="Log marginal likelihood",
     title="Sequential Model Checking")
-log_ml = OptimalDesign.log_evidence_series(log_adaptive)
+log_ml = log_evidence_series(log_adaptive)
 lines!(ax1b, 1:n_adaptive, log_ml, color=:blue, linewidth=1.5)
 scatter!(ax1b, 1:n_adaptive, log_ml, color=:blue, markersize=5)
 
@@ -136,20 +130,14 @@ fig1
 
 # --- Figure 2: Adaptive vs Batch credible bands ---
 
-obs_adaptive = [(ξ=e.ξ, y=e.y) for e in log_adaptive]
-
-fig2 = OptimalDesign.plot_credible_bands(prob,
-    [prior_adaptive, result.posterior, result_batch.posterior],
-    prediction_grid;
-    labels=["Prior", "Adaptive ($n_adaptive obs)", "Batch ($n_adaptive obs)"],
-    truth=θ_true,
-    observations=[nothing, obs_adaptive, result_batch.observations])
+fig2 = plot_credible_bands(prob, result, result_batch;
+    labels=["Adaptive ($n_adaptive obs)", "Batch ($n_adaptive obs)"], truth=θ_true)
 
 # --- Figure 3: Corner plot — adaptive vs batch posterior ---
 
-fig3 = plot_corner(result_batch.posterior, result.posterior;
-    params=[:A, :R₂], labels=["Batch", "Adaptive"],
-    truth=(A=θ_true.A, R₂=θ_true.R₂))
+fig3 = plot_corner(result_batch, result;
+    labels=["Batch", "Adaptive"], truth=θ_true)
+
 
 # --- Figure 4: Observation diagnostics from adaptive run ---
 
@@ -163,7 +151,7 @@ ess_history = Float64[]
 r2_history = Float64[]
 
 for entry in log_adaptive
-    OptimalDesign.update!(prior_ess, prob, entry.ξ, entry.y)
+    update!(prior_ess, prob, entry.x, entry.y)
     push!(ess_history, effective_sample_size(prior_ess))
     push!(r2_history, mean(prior_ess).R₂)
 end
@@ -186,12 +174,10 @@ fig5
 
 # --- Figure 6: Animated corner plot ---
 
-if OptimalDesign.has_posterior_history(log_adaptive)
+if has_posterior_history(log_adaptive)
     println("Recording posterior evolution animation...")
-    record_corner_animation(log_adaptive, "ex5_posterior_evolution.mp4";
-        params=[:A, :R₂],
-        truth=(A=θ_true.A, R₂=θ_true.R₂),
-        framerate=5)
+    record_corner_animation(log_adaptive, "ex5_posterior_evolution.gif";
+        truth=θ_true, framerate=5)
 end
 
 println("Done. Figures created.")

@@ -17,18 +17,29 @@ export DesignProblem, select,
        DCriterion, ACriterion, ECriterion
 
 # Posterior
-export Particles
+export AbstractPosterior, Particles
 
 # Design
-export ExperimentalDesign, design, run_batch, run_adaptive
+export ExperimentalDesign, design, run_batch, run_adaptive,
+       candidate_grid, uniform_allocation, n_obs, weights
+
+# Results
+export AbstractExperimentResult, BatchResult, AdaptiveResult, OptimalityResult
+
+# Logging
+export ExperimentLog, has_posterior_history,
+       design_points, cumulative_cost, log_evidence_series
 
 # Inference and analysis
 export effective_sample_size,
        posterior_predictions, credible_band,
-       efficiency
+       efficiency, verify_optimality, gateaux_derivative,
+       information, observation_diagnostics, update!,
+       draw, score_candidates
 
 # Plotting
-export plot_corner, plot_residuals, record_corner_animation
+export plot_corner, plot_residuals, record_corner_animation,
+       plot_gateaux, plot_design_allocation, plot_credible_bands
 
 # Types and problem definition
 include("types.jl")
@@ -38,6 +49,8 @@ include("sampling.jl")
 include("information.jl")
 include("utility.jl")
 include("posteriors/particle.jl")
+include("show.jl")
+include("candidates.jl")
 include("predictions.jl")
 
 # Design optimisation

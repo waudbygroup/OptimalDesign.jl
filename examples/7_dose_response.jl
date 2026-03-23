@@ -17,84 +17,74 @@ using GLMakie
 Random.seed!(42)
 
 # ═══════════════════════════════════════════════
-# 1. Problem setup — Sigmoid Emax model
+# 1. The model and ground truth
 # ═══════════════════════════════════════════════
 
 #   y = E0 + Emax * dose^h / (ED50^h + dose^h)
 
+function model(θ, x)
+    θ.E0 + θ.Emax * x.dose^θ.h / (θ.ED50^θ.h + x.dose^θ.h)
+end
+
+# Nominal parameters for inspection
+θ_nom = ComponentArray(E0=1.0, Emax=2.0, ED50=exp(-1), h=exp(1))
+println("Nominal: E0=$(θ_nom.E0), Emax=$(θ_nom.Emax), ED50=$(round(θ_nom.ED50; digits=4)), h=$(round(θ_nom.h; digits=4))")
+
+# ═══════════════════════════════════════════════
+# 2. Design problem and prior
+# ═══════════════════════════════════════════════
+
 prob = DesignProblem(
-    (θ, ξ) -> θ.E0 + θ.Emax * ξ.dose^θ.h / (θ.ED50^θ.h + ξ.dose^θ.h),
+    model,
     parameters=(E0=Normal(1, 0.5), Emax=Normal(2, 0.5),
         ED50=LogNormal(-1, 0.5), h=LogNormal(1, 0.5)),
     cost=Returns(1.0),
 )
+display(prob)
 
-candidates = [(dose=d,) for d in range(0.01, 1.0, length=50)]
-
-# Nominal parameters for inspection
-θ_nom = ComponentArray(E0=1.0, Emax=2.0, ED50=exp(-1), h=exp(1))
-println("Sigmoid Emax model: y = E0 + Emax · dose^h / (ED50^h + dose^h)")
-println("Nominal: E0=$(θ_nom.E0), Emax=$(θ_nom.Emax), ED50=$(round(θ_nom.ED50; digits=4)), h=$(round(θ_nom.h; digits=4))")
+candidates = candidate_grid(dose=range(0.01, 1.0, length=50))
 
 # ═══════════════════════════════════════════════
-# 2. Examine FIM at a few dose levels
+# 3. Examine FIM at a few dose levels
 # ═══════════════════════════════════════════════
 
 for d in [0.1, 0.3, 0.5, 0.8]
-    M = OptimalDesign.information(prob, θ_nom, (dose=d,))
+    M = information(prob, θ_nom, (dose=d,))
     println("\nFIM at dose=$d:  rank=$(rank(M)), trace=$(round(tr(M); digits=2))")
 end
 
 # ═══════════════════════════════════════════════
-# 3. Batch design via exchange algorithm
+# 4. Batch design via exchange algorithm
 # ═══════════════════════════════════════════════
 
 n_obs = 20
 prior = Particles(prob, 500)
 
 println("\nCalculating batch design (n=$n_obs)...")
-d = design(prob, candidates, prior; n=n_obs, exchange_steps=200)
-display(d)
+ξ = design(prob, candidates, prior; n=n_obs, exchange_steps=200)
+display(ξ)
 
 # ═══════════════════════════════════════════════
-# 4. Optimality verification
+# 5. Optimality verification
 # ═══════════════════════════════════════════════
 
-opt_check = OptimalDesign.verify_optimality(prob, candidates, prior, d;
+opt_check = verify_optimality(prob, candidates, prior, ξ;
     posterior_samples=500)
-println("\nOptimality verification:")
-println("  Is optimal: $(opt_check.is_optimal)")
-println("  Max Gateaux derivative: $(round(opt_check.max_derivative; digits=3))")
-println("  Bound (q): $(round(opt_check.dimension; digits=3))")
+display(opt_check)
 
 # ═══════════════════════════════════════════════
-# 5. Plots
+# 6. Plots
 # ═══════════════════════════════════════════════
 
 println("\nGenerating plots...")
 
-gd = OptimalDesign.gateaux_derivative(prob, candidates, prior, d;
-    posterior_samples=500)
-w_opt = OptimalDesign.weights(d, candidates)
-
-fig1 = Figure(size=(700, 500))
-
-ax1a = GLMakie.Axis(fig1[1, 1], ylabel="Weight",
-    title="D-Optimal Design for Sigmoid Emax")
-stem!(ax1a, [ξ.dose for ξ in candidates], w_opt, color=:blue)
-
-ax1b = GLMakie.Axis(fig1[2, 1], xlabel="Dose", ylabel="Gateaux derivative",
-    title="Optimality Check (GEQ bound = $(round(Int, opt_check.dimension)))")
-lines!(ax1b, [ξ.dose for ξ in candidates], gd, color=:blue, linewidth=1.5)
-hlines!(ax1b, [opt_check.dimension], color=:red, linestyle=:dash)
-
-fig1
+fig1 = plot_gateaux(opt_check)
 
 # --- Model predictions at nominal parameters ---
 
 println("\nDose-response curve at nominal parameters:")
 for d in range(0.0, 1.0, length=11)
-    y = d == 0.0 ? θ_nom.E0 : prob.predict(θ_nom, (dose=d,))
+    y = d == 0.0 ? θ_nom.E0 : model(θ_nom, (dose=d,))
     bar = repeat("█", round(Int, y * 10))
     println("  dose=$(round(d; digits=2))  y=$(round(y; digits=3))  $bar")
 end

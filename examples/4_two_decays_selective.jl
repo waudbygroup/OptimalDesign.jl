@@ -20,49 +20,50 @@ using GLMakie
 Random.seed!(42)
 
 # ═══════════════════════════════════════════════
-# 1. Problem setup
+# 1. The model and ground truth
 # ═══════════════════════════════════════════════
 
+function model(θ, x)
+    if x.i == 1
+        θ.A₁ * exp(-θ.R₂₁ * x.t)
+    else
+        θ.A₂ * exp(-θ.R₂₂ * x.t)
+    end
+end
+
+# Ground truth (unknown to the design algorithm)
 θ_true = ComponentArray(A₁=1.0, R₂₁=10.0, A₂=1.0, R₂₂=40.0)
 σ_true = 0.05
 n_obs = 20
 
+acquire(x) = model(θ_true, x) + σ_true * randn()
+
+println("Truth: A₁=$(θ_true.A₁), R₂₁=$(θ_true.R₂₁), A₂=$(θ_true.A₂), R₂₂=$(θ_true.R₂₂)")
+
+# ═══════════════════════════════════════════════
+# 2. Design problem and prior
+# ═══════════════════════════════════════════════
+
 prob = DesignProblem(
-    (θ, ξ) -> if ξ.i == 1
-        θ.A₁ * exp(-θ.R₂₁ * ξ.t)
-    else
-        θ.A₂ * exp(-θ.R₂₂ * ξ.t)
-    end,
+    model,
     parameters=(A₁=Normal(1, 0.1), R₂₁=LogUniform(1, 50),
         A₂=Normal(1, 0.1), R₂₂=LogUniform(1, 50)),
     transformation=select(:R₂₁, :R₂₂),
-    sigma=(θ, ξ) -> σ_true,
-    cost=ξ -> ξ.t + 0.1,
+    sigma=Returns(σ_true),
+    cost=x -> x.t + 0.1,
 )
+display(prob)
 
-candidates = [
-    (i=i, t=t)
-    for i in [1, 2]
-    for t in range(0.001, 0.5, length=200)
-]
+candidates = candidate_grid(i=[1, 2], t=range(0.001, 0.5, length=200))
 
 prior = Particles(prob, 1000)
 
-acquire = let θ = θ_true, σ = σ_true
-    ξ -> (ξ.i == 1 ? θ.A₁ * exp(-θ.R₂₁ * ξ.t) : θ.A₂ * exp(-θ.R₂₂ * ξ.t)) + σ * randn()
-end
-
-println("Problem: y = Aᵢ exp(-R₂ᵢ t)  where i ∈ {1,2} selects the decay")
-println("Truth:   A₁=$(θ_true.A₁), R₂₁=$(θ_true.R₂₁), A₂=$(θ_true.A₂), R₂₂=$(θ_true.R₂₂)")
-println("Acquire: $n_obs measurements, choosing which decay to measure")
-println("Goal:    Ds-optimal design for (R₂₁, R₂₂)\n")
-
 # ═══════════════════════════════════════════════
-# 2. Examine block-sparse FIM structure
+# 3. Examine block-sparse FIM structure
 # ═══════════════════════════════════════════════
 
-M1 = OptimalDesign.information(prob, θ_true, (i=1, t=0.1))
-M2 = OptimalDesign.information(prob, θ_true, (i=2, t=0.05))
+M1 = information(prob, θ_true, (i=1, t=0.1))
+M2 = information(prob, θ_true, (i=2, t=0.05))
 
 println("FIM measuring decay 1 (i=1, t=0.1):")
 display(round.(M1, digits=4))
@@ -77,129 +78,66 @@ M_combined = M1 + M2
 println("\nCombined FIM rank: ", rank(M_combined))
 
 # ═══════════════════════════════════════════════
-# 3. Batch design via exchange algorithm
+# 4. Batch design via exchange algorithm
 # ═══════════════════════════════════════════════
 
 println("\nCalculating batch design (n=$n_obs)...")
-d = design(prob, candidates, prior; n=n_obs, exchange_steps=200)
-display(d)
+ξ = design(prob, candidates, prior; n=n_obs, exchange_steps=200)
+display(ξ)
 
-n_decay1 = sum(c for (ξ, c) in d if ξ.i == 1; init=0)
-n_decay2 = sum(c for (ξ, c) in d if ξ.i == 2; init=0)
+n_decay1 = sum(c for (x, c) in ξ if x.i == 1; init=0)
+n_decay2 = sum(c for (x, c) in ξ if x.i == 2; init=0)
 println("  Allocation: $n_decay1 on decay 1, $n_decay2 on decay 2")
 
 # ═══════════════════════════════════════════════
-# 4. Optimality verification
+# 5. Optimality verification
 # ═══════════════════════════════════════════════
 
-opt_check = OptimalDesign.verify_optimality(prob, candidates, prior, d;
+opt = verify_optimality(prob, candidates, prior, ξ;
     posterior_samples=1000)
-println("\nOptimality verification:")
-println("  Is optimal: $(opt_check.is_optimal)")
-println("  Max Gateaux derivative: $(round(opt_check.max_derivative; digits=3))")
-println("  Bound (q): $(round(opt_check.dimension; digits=3))")
+display(opt)
 
 # ═══════════════════════════════════════════════
-# 5. Efficiency comparison against uniform
+# 6. Efficiency comparison against uniform
 # ═══════════════════════════════════════════════
 
-u = OptimalDesign.uniform_allocation(candidates, n_obs)
+ξ_unif = uniform_allocation(candidates, n_obs)
 
-eff = efficiency(u, d, prob, candidates, prior; posterior_samples=1000)
-println("\nD-efficiency of uniform vs optimal: $(round(eff; digits=3))")
-println("  Uniform needs ~$(round(1 / eff; digits=1))× more measurements to match")
+eff = efficiency(ξ_unif, ξ, prob, candidates, prior; posterior_samples=1000)
 
 # ═══════════════════════════════════════════════
-# 6. Simulated acquisition — optimal vs uniform
+# 7. Simulated acquisition — optimal vs uniform
 # ═══════════════════════════════════════════════
 
 println("\n--- Simulated experiments ---")
 
-posterior_opt = Particles(prob, 1000)
-result_opt = run_batch(d, prob, posterior_opt, acquire)
+result_opt = run_batch(ξ, prob, prior, acquire)
+display(result_opt)
 
-posterior_unif = Particles(prob, 1000)
-result_unif = run_batch(u, prob, posterior_unif, acquire)
-
-μ_opt = mean(result_opt.posterior)
-μ_unif = mean(result_unif.posterior)
-println("Posterior mean (optimal):  R₂₁=$(round(μ_opt.R₂₁; digits=2)), R₂₂=$(round(μ_opt.R₂₂; digits=2))")
-println("Posterior mean (uniform):  R₂₁=$(round(μ_unif.R₂₁; digits=2)), R₂₂=$(round(μ_unif.R₂₂; digits=2))")
+result_unif = run_batch(ξ_unif, prob, prior, acquire)
+display(result_unif)
 
 # ═══════════════════════════════════════════════
-# 7. Plots
+# 8. Plots
 # ═══════════════════════════════════════════════
 
 println("\nGenerating plots...")
 
 # --- Figure 1: Design allocation + Gateaux derivative ---
 
-gd = OptimalDesign.gateaux_derivative(prob, candidates, prior, d;
-    posterior_samples=1000)
-w_opt = OptimalDesign.weights(d, candidates)
+fig1 = plot_gateaux(opt)
 
-# Separate candidates by decay
-times_1 = [c.t for c in candidates if c.i == 1]
-times_2 = [c.t for c in candidates if c.i == 2]
-gd_1 = [gd[k] for k in eachindex(candidates) if candidates[k].i == 1]
-gd_2 = [gd[k] for k in eachindex(candidates) if candidates[k].i == 2]
-w_1 = [w_opt[k] for k in eachindex(candidates) if candidates[k].i == 1]
-w_2 = [w_opt[k] for k in eachindex(candidates) if candidates[k].i == 2]
+# --- Figure 2: Credible bands for decay 1 ---
 
-fig1 = Figure(size=(700, 700))
-
-ax1a = GLMakie.Axis(fig1[1, 1], ylabel="Weight",
-    title="Design Allocation — Decay 1 (R₂₁=$(θ_true.R₂₁))")
-stem!(ax1a, times_1, w_1, color=:blue)
-
-ax1b = GLMakie.Axis(fig1[2, 1], ylabel="Weight",
-    title="Design Allocation — Decay 2 (R₂₂=$(θ_true.R₂₂))")
-stem!(ax1b, times_2, w_2, color=:orange)
-
-ax1c = GLMakie.Axis(fig1[3, 1], xlabel="t", ylabel="Gateaux derivative",
-    title="Optimality Check (GEQ bound = $(round(Int, opt_check.dimension)))")
-lines!(ax1c, times_1, gd_1, color=:blue, linewidth=1.5, label="Decay 1")
-lines!(ax1c, times_2, gd_2, color=:orange, linewidth=1.5, label="Decay 2")
-hlines!(ax1c, [opt_check.dimension], color=:red, linestyle=:dash)
-axislegend(ax1c)
-
-fig1
-
-# --- Figure 2: Credible bands for each decay ---
-
-prediction_grid_1 = [(i=1, t=t) for t in range(0.001, 0.5, length=100)]
-prediction_grid_2 = [(i=2, t=t) for t in range(0.001, 0.5, length=100)]
-x_grid = [ξ.t for ξ in prediction_grid_1]
-
-obs_1_opt = [(ξ=o.ξ, y=o.y) for o in result_opt.observations if o.ξ.i == 1]
-obs_2_opt = [(ξ=o.ξ, y=o.y) for o in result_opt.observations if o.ξ.i == 2]
-obs_1_unif = [(ξ=o.ξ, y=o.y) for o in result_unif.observations if o.ξ.i == 1]
-obs_2_unif = [(ξ=o.ξ, y=o.y) for o in result_unif.observations if o.ξ.i == 2]
-
-fig2 = OptimalDesign.plot_credible_bands(prob,
-    [prior, result_opt.posterior, result_unif.posterior],
-    prediction_grid_1;
-    labels=["Prior", "Optimal", "Uniform"],
-    truth=θ_true)
+fig2 = plot_credible_bands(prob, result_opt, result_unif;
+    labels=["Optimal", "Uniform"], truth=θ_true,
+    x_grid=candidate_grid(i=[1], t=range(0.001, 0.5, length=100)))
 
 # --- Figure 3: Corner plot — prior vs optimal posterior ---
 
-fig3 = plot_corner(prior, result_opt.posterior;
-    params=[:A₁, :R₂₁, :A₂, :R₂₂], labels=["Prior", "Optimal"],
-    truth=(A₁=θ_true.A₁, R₂₁=θ_true.R₂₁, A₂=θ_true.A₂, R₂₂=θ_true.R₂₂))
+fig3 = plot_corner(result_opt; truth=θ_true)
 
 # --- Figure 4: Corner plot — optimal vs uniform posterior ---
 
-fig4 = plot_corner(result_unif.posterior, result_opt.posterior;
-    params=[:A₁, :R₂₁, :A₂, :R₂₂], labels=["Uniform", "Optimal"],
-    truth=(A₁=θ_true.A₁, R₂₁=θ_true.R₂₁, A₂=θ_true.A₂, R₂₂=θ_true.R₂₂))
-
-# --- Comparison with Example 3 ---
-println("\n=== Comparison ===")
-println("Example 3 (vector obs): Each measurement observes BOTH decays simultaneously")
-println("Example 4 (selective):  Each measurement observes ONE decay (must choose)")
-println("The selective design must allocate between decays;")
-println("R₂₂=$(θ_true.R₂₂) (fast) needs shorter measurement times than R₂₁=$(θ_true.R₂₁) (slow).")
-println("Optimal allocation: $n_decay1 on decay 1, $n_decay2 on decay 2")
-
-println("\nDone. Figures created.")
+fig4 = plot_corner(result_unif, result_opt;
+    labels=["Uniform", "Optimal"], truth=θ_true)

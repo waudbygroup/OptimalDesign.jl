@@ -14,7 +14,7 @@ More particles give better coverage of the prior but cost more in design computa
 
 ## Updating with data
 
-After acquiring observations, the posterior is updated via `run_batch` or `run_adaptive`. Under the hood, these call `update!`, which:
+After acquiring observations, the posterior is updated via `run_batch` or `run_adaptive`. These functions do not mutate the prior — they make an internal copy and return a result containing both the original `prior` and the updated `posterior`. Under the hood, they call `update!`, which:
 
 1. Computes the likelihood of each observation under each particle
 2. Uses **likelihood tempering** to gradually increase the data weight, avoiding particle collapse
@@ -27,8 +27,11 @@ You don't need to call `update!` directly — `run_batch` and `run_adaptive` han
 ### Point estimate
 
 ```julia
-μ = mean(posterior)
+μ = mean(result.posterior)
 # μ.A ≈ 1.0, μ.R₂ ≈ 25.0
+
+# Or directly on the result:
+μ = mean(result)
 ```
 
 Returns a `ComponentArray` with the weighted mean of each parameter.
@@ -47,8 +50,8 @@ To propagate posterior uncertainty through the model:
 
 ```julia
 # Predict at a grid of design points
-grid = [(t = t,) for t in range(0, 0.5, length = 100)]
-preds = posterior_predictions(prob, posterior, grid; n_samples = 200)
+grid = candidate_grid(t = range(0, 0.5, length = 100))
+preds = posterior_predictions(prob, result.posterior, grid; n_samples = 200)
 ```
 
 `preds` is a matrix (rows = grid points, columns = posterior samples) for scalar models, or a vector of matrices for vector models.

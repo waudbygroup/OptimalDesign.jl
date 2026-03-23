@@ -36,6 +36,7 @@ function plot_corner(
     colors=nothing,
     bins::Int=30,
     level::Real=0.9,
+    highlight::Union{Nothing,Tuple{Vararg{Symbol}},AbstractVector{Symbol}}=nothing,
 )
     n_dist = length(posteriors)
     n_dist >= 1 || error("At least one posterior required")
@@ -44,6 +45,7 @@ function plot_corner(
     θ1 = first(first(posteriors).particles)
     names = params !== nothing ? params : collect(keys(θ1))
     d = length(names)
+    _highlight = highlight !== nothing ? Set(highlight) : Set{Symbol}()
 
     # Default colours and labels
     default_colors = [(:orange, 0.6), (:royalblue, 0.6), (:green, 0.6), (:purple, 0.6)]
@@ -79,14 +81,16 @@ function plot_corner(
                 continue
             end
 
-            # Axis labels: only on edges
-            xlabel = i == d ? string(names[j]) : ""
-            ylabel = j == 1 && i > 1 ? string(names[i]) : (j == 1 && i == 1 ? "Density" : "")
+            # Axis labels: only on edges. Highlight selected parameters.
+            _label(name) = name in _highlight ? rich(string(name); font=:bold, color=:red) : string(name)
+            xlabel = i == d ? _label(names[j]) : ""
+            ylabel = j == 1 && i > 1 ? _label(names[i]) : (j == 1 && i == 1 ? "Density" : "")
 
             if i == j
                 # ── Diagonal: 1D marginal histogram ──
+                diag_title = i == 1 ? _label(names[i]) : ""
                 ax = CairoMakie.Axis(fig[i, j]; xlabel, ylabel,
-                    title=i == 1 ? string(names[i]) : "", yzoomlock=true, yrectzoom=false)
+                    title=diag_title, yzoomlock=true, yrectzoom=false)
 
                 for di in 1:n_dist
                     vals = all_vals[di][i]
@@ -406,4 +410,29 @@ function record_corner_animation(
 
     @info "Animation saved: $filename"
     filename
+end
+
+# --- Convenience: plot_corner on experiment results ---
+
+"""
+    plot_corner(result; truth=θ_true)
+    plot_corner(result1, result2; labels=["Optimal", "Uniform"], truth=θ_true)
+
+Corner plot from one or more experiment results.
+
+With a single result, compares prior vs posterior.
+With multiple results, compares their posteriors.
+"""
+function plot_corner(results::AbstractExperimentResult...;
+    labels::Union{Nothing,Vector{String}}=nothing,
+    kwargs...,
+)
+    if length(results) == 1
+        r = first(results)
+        ls = labels !== nothing ? labels : ["Prior", "Posterior"]
+        plot_corner(r.prior, r.posterior; labels=ls, kwargs...)
+    else
+        ls = labels !== nothing ? labels : ["Result $i" for i in 1:length(results)]
+        plot_corner((r.posterior for r in results)...; labels=ls, kwargs...)
+    end
 end

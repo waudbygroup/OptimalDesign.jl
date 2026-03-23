@@ -64,8 +64,8 @@ function _create_dashboard(prob, posterior, prediction_grid, budget)
                 xlabel=string(first(keys(first(prediction_grid)))),
                 ylabel="Prediction")
 
-            x_vals = [getfield(ξ, first(keys(first(prediction_grid))))
-                      for ξ in prediction_grid]
+            x_vals = [getfield(x, first(keys(first(prediction_grid))))
+                      for x in prediction_grid]
 
             GLMakie.band!(ax_pred, x_vals, obs_pred_lower, obs_pred_upper,
                 color=(:blue, 0.2))
@@ -121,10 +121,10 @@ function _update_dashboard!(dashboard::LiveDashboard, prob, posterior, log, spen
     # Update design points
     if !isempty(log.history)
         last_entry = log.history[end]
-        ξ = last_entry.ξ
+        x = last_entry.x
         y = last_entry.y
-        # Use first field of ξ as x coordinate
-        x_val = first(values(ξ))
+        # Use first field of x as x coordinate
+        x_val = first(values(x))
         y_val = y isa NamedTuple ? y.value : (y isa Real ? y : first(y))
 
         push!(dashboard.obs_design_x[], x_val)

@@ -1,44 +1,71 @@
 # Quickstart
 
-A complete example in under 30 lines: design an experiment for an exponential decay, acquire simulated data, and estimate the parameters.
+A complete worked example: design an experiment for an exponential decay, acquire simulated data, estimate the parameters, and visualise the results.
 
-```julia
+## The model and ground truth
+
+```@example quickstart
 using OptimalDesign
+using CairoMakie
 using ComponentArrays
 using Distributions
+using Random; Random.seed!(42) # hide
 
-# 1. Define the model and prior uncertainty
-prob = DesignProblem(
-    (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),          # model: y = A exp(-R₂ t)
-    parameters = (A = LogUniform(0.1, 10),         # prior on amplitude
-                  R₂ = Uniform(1, 50)),            # prior on decay rate
-    transformation = select(:R₂),                  # we care about R₂
-    sigma = (θ, ξ) -> 0.1,                         # measurement noise σ
-)
-
-# 2. Candidate measurement times and a prior particle set
-candidates = [(t = t,) for t in range(0.001, 0.5, length = 200)]
-prior = Particles(prob, 1000)
-
-# 3. Compute the optimal design (20 measurements)
-ξ = design(prob, candidates, prior; n = 20)
-display(ξ)   # displays support points, counts, and a bar chart
-
-# 4. Acquire data (here simulated; replace with your instrument)
-θ_true = ComponentArray(A = 1.0, R₂ = 25.0)
-function acquire(x)
-    A = θ_true.A
-    R₂ = θ_true.R₂
-    t = x.t
-    A * exp(-R₂ * t) + 0.1 * randn()
+# The physical model: exponential decay with amplitude A and rate R₂
+function model(θ, x)
+    θ.A * exp(-θ.R₂ * x.t)
 end
 
-posterior = Particles(prob, 1000)
-result = run_batch(ξ, prob, posterior, acquire)
+# Ground truth (unknown to the design algorithm)
+θ_true = ComponentArray(A = 1.0, R₂ = 25.0)
+σ = 0.1
 
-# 5. Inspect the posterior
-display(mean(result.posterior))   # ≈ (A = 1.0, R₂ = 25.0)
-display(std(result.posterior))
+# Simulated instrument: call this to "measure" at design point x
+acquire(x) = model(θ_true, x) + σ * randn()
+nothing # hide
+```
+
+## Setting up the design problem
+
+The `DesignProblem` tells the algorithm what it needs to know: the model, prior uncertainty on each parameter, and what we want to estimate. We want to estimate ``R_2`` as precisely as possible, treating ``A`` as a nuisance parameter.
+
+```@example quickstart
+prob = DesignProblem(
+    model,
+    parameters = (A = LogUniform(0.1, 10), R₂ = Uniform(1, 50)),
+    transformation = select(:R₂),
+    sigma = Returns(σ),
+)
+
+candidates = candidate_grid(t = range(0.001, 0.5, length = 200))
+prior = Particles(prob, 1000)
+nothing # hide
+```
+
+## Computing the optimal design
+
+```@example quickstart
+ξ = design(prob, candidates, prior; n = 20)
+```
+
+## Running the experiment
+
+```@example quickstart
+result = run_batch(ξ, prob, prior, acquire)
+```
+
+## Visualising results
+
+Credible bands show how the posterior prediction narrows compared to the prior:
+
+```@example quickstart
+plot_credible_bands(prob, result; truth = θ_true)
+```
+
+A corner plot shows the joint posterior over the parameters:
+
+```@example quickstart
+plot_corner(result; truth = θ_true)
 ```
 
 That's it. The key objects are:

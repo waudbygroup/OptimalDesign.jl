@@ -29,7 +29,7 @@ const od_loglikelihood = OptimalDesign.loglikelihood
     @testset "DesignProblem construction" begin
         # Minimal construction
         prob = DesignProblem(
-            (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+            (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
         )
         @test prob.predict isa Function
@@ -40,12 +40,12 @@ const od_loglikelihood = OptimalDesign.loglikelihood
 
         # Full construction
         prob2 = DesignProblem(
-            (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
-            jacobian=(θ, ξ) -> [exp(-θ.R₂ * ξ.t) -θ.A * ξ.t * exp(-θ.R₂ * ξ.t)],
-            sigma=(θ, ξ) -> 0.05,
+            (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
+            jacobian=(θ, x) -> [exp(-θ.R₂ * x.t) -θ.A * x.t * exp(-θ.R₂ * x.t)],
+            sigma=(θ, x) -> 0.05,
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
             transformation=DeltaMethod(θ -> ComponentArray(R₂=θ.R₂)),
-            cost=ξ -> ξ.t + 0.1,
+            cost=x -> x.t + 0.1,
         )
         @test prob2.jacobian !== nothing
     end
@@ -67,36 +67,36 @@ const od_loglikelihood = OptimalDesign.loglikelihood
         J = [1.0 2.0; 3.0 4.0]
 
         # Scalar sigma
-        F1 = weighted_fim(J, 0.5)
+        F1 = OptimalDesign.weighted_fim(J, 0.5)
         @test F1 ≈ J' * J / 0.25
 
         # Vector sigma
-        F2 = weighted_fim(J, [0.5, 1.0])
+        F2 = OptimalDesign.weighted_fim(J, [0.5, 1.0])
         W = Diagonal([1 / 0.25, 1 / 1.0])
         @test F2 ≈ J' * W * J
 
         # Matrix sigma
         Σ = [1.0 0.2; 0.2 0.5]
-        F3 = weighted_fim(J, Σ)
+        F3 = OptimalDesign.weighted_fim(J, Σ)
         @test F3 ≈ J' * inv(Σ) * J
 
         # Vector J (scalar observation)
         Jv = [1.0, 2.0]
-        F4 = weighted_fim(Jv, 1.0)
+        F4 = OptimalDesign.weighted_fim(Jv, 1.0)
         @test F4 ≈ reshape(Jv, 1, 2)' * reshape(Jv, 1, 2)
     end
 
     @testset "Example 1: Exponential decay — FIM" begin
         prob = DesignProblem(
-            (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+            (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> 0.05,
+            sigma=(θ, x) -> 0.05,
         )
 
         θ = ComponentArray(A=1.0, R₂=10.0)
-        ξ = (t=0.1,)
+        x = (t=0.1,)
 
-        M = information(prob, θ, ξ)
+        M = information(prob, θ, x)
         @test size(M) == (2, 2)
         @test issymmetric(M) || M ≈ M'
         # Rank 1 from single scalar observation — one eigenvalue is zero (up to float)
@@ -113,30 +113,30 @@ const od_loglikelihood = OptimalDesign.loglikelihood
     end
 
     @testset "Example 2: Inversion recovery — analytic vs ForwardDiff Jacobian" begin
-        predict = (θ, ξ) -> θ.A - θ.B * exp(-θ.R₁ * ξ.τ)
-        jac = (θ, ξ) -> begin
-            e = exp(-θ.R₁ * ξ.τ)
-            [1.0 -e θ.B * ξ.τ * e]
+        predict = (θ, x) -> θ.A - θ.B * exp(-θ.R₁ * x.τ)
+        jac = (θ, x) -> begin
+            e = exp(-θ.R₁ * x.τ)
+            [1.0 -e θ.B * x.τ * e]
         end
 
         prob_ad = DesignProblem(
             predict,
             parameters=(A=Normal(1, 0.1), B=Normal(2, 0.1), R₁=LogNormal(0, 0.5)),
-            sigma=(θ, ξ) -> 0.05,
+            sigma=(θ, x) -> 0.05,
         )
 
         prob_analytic = DesignProblem(
             predict,
             jacobian=jac,
             parameters=(A=Normal(1, 0.1), B=Normal(2, 0.1), R₁=LogNormal(0, 0.5)),
-            sigma=(θ, ξ) -> 0.05,
+            sigma=(θ, x) -> 0.05,
         )
 
         θ = ComponentArray(A=1.0, B=2.0, R₁=1.0)
-        ξ = (τ=0.5,)
+        x = (τ=0.5,)
 
-        M_ad = information(prob_ad, θ, ξ)
-        M_analytic = information(prob_analytic, θ, ξ)
+        M_ad = information(prob_ad, θ, x)
+        M_analytic = information(prob_analytic, θ, x)
 
         @test M_ad ≈ M_analytic atol = 1e-10
         @test size(M_ad) == (3, 3)
@@ -145,10 +145,10 @@ const od_loglikelihood = OptimalDesign.loglikelihood
     @testset "DeltaMethod transformation" begin
         # Use a full-rank FIM by summing over multiple design points
         prob = DesignProblem(
-            (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+            (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
             transformation=select(:R₂),
-            sigma=(θ, ξ) -> 0.05,
+            sigma=(θ, x) -> 0.05,
         )
 
         θ = ComponentArray(A=1.0, R₂=10.0)
@@ -157,7 +157,7 @@ const od_loglikelihood = OptimalDesign.loglikelihood
         M = information(prob, θ, (t=0.05,)) + information(prob, θ, (t=0.2,))
         @test isposdef(Symmetric(M))
 
-        Mt = transform(prob, M, θ)
+        Mt = OptimalDesign.transform(prob, M, θ)
 
         # Transformed matrix should be 1×1 for single parameter of interest
         @test size(Mt) == (1, 1)
@@ -166,9 +166,9 @@ const od_loglikelihood = OptimalDesign.loglikelihood
 
     @testset "Particles" begin
         prob = DesignProblem(
-            (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+            (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> 0.05,
+            sigma=(θ, x) -> 0.05,
         )
 
         post = Particles(prob, 500)
@@ -192,38 +192,38 @@ const od_loglikelihood = OptimalDesign.loglikelihood
 
     @testset "loglikelihood" begin
         prob = DesignProblem(
-            (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+            (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> 0.05,
+            sigma=(θ, x) -> 0.05,
         )
 
         θ = ComponentArray(A=1.0, R₂=10.0)
-        ξ = (t=0.1,)
-        ŷ = prob.predict(θ, ξ)
+        x = (t=0.1,)
+        ŷ = prob.predict(θ, x)
 
         # Perfect observation: highest likelihood
-        ll_perfect = od_loglikelihood(prob, θ, ξ, ŷ)
-        ll_noisy = od_loglikelihood(prob, θ, ξ, ŷ + 0.1)
+        ll_perfect = od_loglikelihood(prob, θ, x, ŷ)
+        ll_noisy = od_loglikelihood(prob, θ, x, ŷ + 0.1)
         @test ll_perfect > ll_noisy
 
         # Structured observation
-        ll_struct = od_loglikelihood(prob, θ, ξ, (value=ŷ, σ=0.05))
+        ll_struct = od_loglikelihood(prob, θ, x, (value=ŷ, σ=0.05))
         @test ll_struct ≈ ll_perfect
     end
 
     @testset "update! posterior" begin
         prob = DesignProblem(
-            (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+            (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> 0.05,
+            sigma=(θ, x) -> 0.05,
         )
 
         post = Particles(prob, 1000)
         θ_true = ComponentArray(A=1.0, R₂=10.0)
-        ξ = (t=0.1,)
-        y = prob.predict(θ_true, ξ) + 0.05 * randn()
+        x = (t=0.1,)
+        y = prob.predict(θ_true, x) + 0.05 * randn()
 
-        update!(post, prob, ξ, y)
+        update!(post, prob, x, y)
 
         μ = mean(post)
         @test μ isa ComponentArray
@@ -232,60 +232,60 @@ const od_loglikelihood = OptimalDesign.loglikelihood
     @testset "expected_utility" begin
         # Use vector observation so single-point FIM is full rank (2 obs, 2 params)
         prob = DesignProblem(
-            (θ, ξ) -> [θ.A * exp(-θ.R₂ * ξ.t), θ.A * exp(-θ.R₂ * ξ.t * 2)],
+            (θ, x) -> [θ.A * exp(-θ.R₂ * x.t), θ.A * exp(-θ.R₂ * x.t * 2)],
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> [0.05, 0.05],
+            sigma=(θ, x) -> [0.05, 0.05],
         )
 
         particles = draw(prob.parameters, 100)
-        ξ = (t=0.1,)
+        x = (t=0.1,)
 
-        u = expected_utility(prob, DCriterion(), particles, ξ; posterior_samples=50)
+        u = expected_utility(prob, particles, x; posterior_samples=50)
         @test isfinite(u)
 
         # Score multiple candidates
         candidates = [(t=t,) for t in range(0.01, 0.5, length=20)]
-        scores = score_candidates(prob, DCriterion(), particles, candidates; posterior_samples=50)
+        scores = score_candidates(prob, particles, candidates; posterior_samples=50)
         @test length(scores) == 20
         @test all(isfinite, scores)
 
         # Scalar observation (rank-deficient FIM) — should not error
         prob_scalar = DesignProblem(
-            (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+            (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> 0.05,
+            sigma=Returns(0.05),
         )
-        u_scalar = expected_utility(prob_scalar, DCriterion(), particles, ξ; posterior_samples=50)
+        u_scalar = expected_utility(prob_scalar, particles, x; posterior_samples=50)
         @test !isnan(u_scalar)
     end
 
     @testset "Example 3: Vector observation" begin
         prob = DesignProblem(
-            (θ, ξ) -> [θ.A₁ * exp(-θ.R₂₁ * ξ.t),
-                θ.A₂ * exp(-θ.R₂₂ * ξ.t)],
+            (θ, x) -> [θ.A₁ * exp(-θ.R₂₁ * x.t),
+                θ.A₂ * exp(-θ.R₂₂ * x.t)],
             parameters=(A₁=Normal(1, 0.1), R₂₁=LogNormal(2, 0.5),
                 A₂=Normal(1, 0.1), R₂₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> [0.05, 0.05],
+            sigma=(θ, x) -> [0.05, 0.05],
         )
 
         θ = ComponentArray(A₁=1.0, R₂₁=10.0, A₂=1.0, R₂₂=25.0)
-        ξ = (t=0.1,)
+        x = (t=0.1,)
 
-        M = information(prob, θ, ξ)
+        M = information(prob, θ, x)
         @test size(M) == (4, 4)
         @test all(eigvals(Symmetric(M)) .>= -1e-10)
     end
 
     @testset "Example 4: Selective observation — block sparsity" begin
         prob = DesignProblem(
-            (θ, ξ) -> if ξ.i == 1
-                θ.A₁ * exp(-θ.R₂₁ * ξ.t)
+            (θ, x) -> if x.i == 1
+                θ.A₁ * exp(-θ.R₂₁ * x.t)
             else
-                θ.A₂ * exp(-θ.R₂₂ * ξ.t)
+                θ.A₂ * exp(-θ.R₂₂ * x.t)
             end,
             parameters=(A₁=Normal(1, 0.1), R₂₁=LogNormal(2, 0.5),
                 A₂=Normal(1, 0.1), R₂₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> 0.05,
+            sigma=(θ, x) -> 0.05,
         )
 
         θ = ComponentArray(A₁=1.0, R₂₁=10.0, A₂=1.0, R₂₂=25.0)
@@ -313,75 +313,75 @@ const od_loglikelihood = OptimalDesign.loglikelihood
 
     @testset "apportion" begin
         # Basic rounding
-        counts = apportion([0.5, 0.3, 0.2], 10)
+        counts = OptimalDesign.apportion([0.5, 0.3, 0.2], 10)
         @test sum(counts) == 10
         @test counts == [5, 3, 2]
 
         # Handles remainders correctly
-        counts2 = apportion([1 / 3, 1 / 3, 1 / 3], 10)
+        counts2 = OptimalDesign.apportion([1 / 3, 1 / 3, 1 / 3], 10)
         @test sum(counts2) == 10
 
         # Edge case: all weight on one candidate
-        counts3 = apportion([1.0, 0.0, 0.0], 5)
+        counts3 = OptimalDesign.apportion([1.0, 0.0, 0.0], 5)
         @test counts3 == [5, 0, 0]
     end
 
     @testset "design — greedy" begin
         # Vector observation for full-rank FIM
         prob = DesignProblem(
-            (θ, ξ) -> [θ.A * exp(-θ.R₂ * ξ.t), θ.A * exp(-θ.R₂ * ξ.t * 2)],
+            (θ, x) -> [θ.A * exp(-θ.R₂ * x.t), θ.A * exp(-θ.R₂ * x.t * 2)],
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> [0.05, 0.05],
+            sigma=(θ, x) -> [0.05, 0.05],
             cost=Returns(1.0),
         )
         candidates = [(t=t,) for t in range(0.01, 0.5, length=20)]
         prior = Particles(prob, 100)
 
         # Select 3 points greedily
-        design = design(prob, candidates, prior;
+        ξ = design(prob, candidates, prior;
             n=3, criterion=DCriterion(), posterior_samples=50, exchange_algorithm=false)
 
-        @test !isempty(design)
-        total_count = sum(last.(design))
+        @test !isempty(ξ)
+        total_count = sum(last.(ξ))
         @test total_count == 3
         # All selected candidates should be from the candidate list
-        for (ξ, count) in design
-            @test ξ in candidates
+        for (x, count) in ξ
+            @test x in candidates
             @test count >= 1
         end
     end
 
     @testset "design — greedy with budget" begin
         prob = DesignProblem(
-            (θ, ξ) -> [θ.A * exp(-θ.R₂ * ξ.t), θ.A * exp(-θ.R₂ * ξ.t * 2)],
+            (θ, x) -> [θ.A * exp(-θ.R₂ * x.t), θ.A * exp(-θ.R₂ * x.t * 2)],
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> [0.05, 0.05],
-            cost=ξ -> ξ.t + 0.5,
+            sigma=(θ, x) -> [0.05, 0.05],
+            cost=x -> x.t + 0.5,
         )
         candidates = [(t=t,) for t in range(0.01, 0.5, length=20)]
         prior = Particles(prob, 100)
 
         # Budget of 2.0 should limit selections
-        design = design(prob, candidates, prior;
+        ξ = design(prob, candidates, prior;
             n=100, criterion=DCriterion(), posterior_samples=50,
             budget=2.0, exchange_algorithm=false)
 
-        total_cost = sum(prob.cost(nothing, ξ) * count for (ξ, count) in design)
+        total_cost = sum(prob.cost(nothing, x) * count for (x, count) in ξ)
         @test total_cost <= 2.0
     end
 
     @testset "exchange algorithm" begin
         # Vector observation for well-conditioned FIM
         prob = DesignProblem(
-            (θ, ξ) -> [θ.A * exp(-θ.R₂ * ξ.t), θ.A * exp(-θ.R₂ * ξ.t * 2)],
+            (θ, x) -> [θ.A * exp(-θ.R₂ * x.t), θ.A * exp(-θ.R₂ * x.t * 2)],
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> [0.05, 0.05],
+            sigma=(θ, x) -> [0.05, 0.05],
         )
         candidates = [(t=t,) for t in range(0.01, 0.5, length=20)]
         particles = draw(prob.parameters, 100)
 
-        weights = exchange(prob, candidates, particles;
-            criterion=DCriterion(), posterior_samples=50, max_iter=50)
+        weights = OptimalDesign.exchange(prob, candidates, particles;
+            posterior_samples=50, max_iter=50)
 
         @test length(weights) == 20
         @test sum(weights) ≈ 1.0 atol = 1e-6
@@ -392,45 +392,45 @@ const od_loglikelihood = OptimalDesign.loglikelihood
 
     @testset "gateaux_derivative" begin
         prob = DesignProblem(
-            (θ, ξ) -> [θ.A * exp(-θ.R₂ * ξ.t), θ.A * exp(-θ.R₂ * ξ.t * 2)],
+            (θ, x) -> [θ.A * exp(-θ.R₂ * x.t), θ.A * exp(-θ.R₂ * x.t * 2)],
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> [0.05, 0.05],
+            sigma=(θ, x) -> [0.05, 0.05],
         )
         candidates = [(t=t,) for t in range(0.01, 0.5, length=20)]
         particles = draw(prob.parameters, 100)
 
-        weights = exchange(prob, candidates, particles;
-            criterion=DCriterion(), posterior_samples=50, max_iter=50)
+        weights = OptimalDesign.exchange(prob, candidates, particles;
+            posterior_samples=50, max_iter=50)
 
         gd = gateaux_derivative(prob, candidates, particles, weights;
-            criterion=DCriterion(), posterior_samples=50)
+            posterior_samples=50)
 
         @test length(gd) == 20
         @test all(isfinite, gd)
-        # GEQ: at optimum, d(ξ) ≤ p for all candidates
+        # GEQ: at optimum, d(x) ≤ p for all candidates
         @test maximum(gd) <= 2.0 + 0.1  # p=2 with some tolerance
     end
 
     @testset "gateaux_derivative — DeltaMethod" begin
         # D_s-optimality: interest in R₂ only
         prob = DesignProblem(
-            (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+            (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
             parameters=(A=Normal(1, 0.1), R₂=LogUniform(1, 50)),
             transformation=select(:R₂),
-            sigma=(θ, ξ) -> 0.05,
+            sigma=(θ, x) -> 0.05,
         )
         candidates = [(t=t,) for t in range(0.001, 0.5, length=30)]
         particles = draw(prob.parameters, 100)
 
-        weights = exchange(prob, candidates, particles;
+        weights = OptimalDesign.exchange(prob, candidates, particles;
             criterion=DCriterion(), posterior_samples=50, max_iter=100)
 
         gd = gateaux_derivative(prob, candidates, particles, weights;
-            criterion=DCriterion(), posterior_samples=50)
+            posterior_samples=50)
 
         @test length(gd) == 30
         @test all(isfinite, gd)
-        # GEQ: at optimum, d(ξ) ≤ q=1 for D_s with 1 parameter of interest
+        # GEQ: at optimum, d(x) ≤ q=1 for D_s with 1 parameter of interest
         @test maximum(gd) <= 1.0 + 0.2  # q=1 with tolerance
     end
 
@@ -447,17 +447,17 @@ const od_loglikelihood = OptimalDesign.loglikelihood
 
     @testset "observation_diagnostics" begin
         prob = DesignProblem(
-            (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+            (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> 0.05,
+            sigma=(θ, x) -> 0.05,
         )
 
         post = Particles(prob, 500)
         θ_true = ComponentArray(A=1.0, R₂=10.0)
-        ξ = (t=0.1,)
-        y = prob.predict(θ_true, ξ)
+        x = (t=0.1,)
+        y = prob.predict(θ_true, x)
 
-        diag = observation_diagnostics(post, prob, ξ, y)
+        diag = observation_diagnostics(post, prob, x, y)
         @test haskey(diag, :mean_residual)
         @test haskey(diag, :log_marginal)
         @test isfinite(diag.log_marginal)
@@ -467,51 +467,114 @@ const od_loglikelihood = OptimalDesign.loglikelihood
         log = ExperimentLog()
         @test length(log) == 0
 
-        push!(log, (ξ=(t=0.1,), y=0.5, cost=1.0,
+        push!(log, (x=(t=0.1,), y=0.5, cost=1.0,
             diagnostics=(mean_residual=0.01, log_marginal=-3.0)))
-        push!(log, (ξ=(t=0.2,), y=0.3, cost=1.0,
+        push!(log, (x=(t=0.2,), y=0.3, cost=1.0,
             diagnostics=(mean_residual=-0.02, log_marginal=-2.5)))
 
         @test length(log) == 2
         @test design_points(log) == [(t=0.1,), (t=0.2,)]
-        @test observations(log) == [0.5, 0.3]
+        @test OptimalDesign.observations(log) == [0.5, 0.3]
         @test cumulative_cost(log) == [1.0, 2.0]
         @test log_evidence_series(log) == [-3.0, -2.5]
     end
 
     @testset "run_adaptive — headless" begin
         prob = DesignProblem(
-            (θ, ξ) -> [θ.A * exp(-θ.R₂ * ξ.t), θ.A * exp(-θ.R₂ * ξ.t * 2)],
+            (θ, x) -> [θ.A * exp(-θ.R₂ * x.t), θ.A * exp(-θ.R₂ * x.t * 2)],
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> [0.05, 0.05],
+            sigma=Returns([0.05, 0.05]),
             cost=Returns(1.0),
         )
 
         θ_true = ComponentArray(A=1.0, R₂=10.0)
-        acquire = let θ = θ_true, σ = 0.05
-            ξ -> [θ.A * exp(-θ.R₂ * ξ.t) + σ * randn(),
-                θ.A * exp(-θ.R₂ * ξ.t * 2) + σ * randn()]
-        end
+        acquire(x) = [θ_true.A * exp(-θ_true.R₂ * x.t) + 0.05 * randn(),
+                      θ_true.A * exp(-θ_true.R₂ * x.t * 2) + 0.05 * randn()]
 
-        candidates = [(t=t,) for t in range(0.01, 0.5, length=20)]
+        candidates = candidate_grid(t=range(0.01, 0.5, length=20))
         prior = Particles(prob, 200)
 
         result = run_adaptive(
             prob, candidates, prior, acquire;
             budget=5.0,
-                       posterior_samples=50,
+            posterior_samples=50,
             n_per_step=1,
             headless=true,
         )
 
+        @test result isa AdaptiveResult
         @test result.posterior isa Particles
+        @test result.prior isa Particles
         @test result.log isa ExperimentLog
         @test length(result.log) >= 1
         @test length(result.log) <= 5  # budget=5, cost=1 per step
+        @test length(result.observations) == length(result.log)
+
+        # Prior should not have been mutated
+        ess_prior = effective_sample_size(prior)
+        @test ess_prior ≈ 200.0 atol=1.0
 
         # Check posterior has been updated
         μ = mean(result.posterior)
         @test μ isa ComponentArray
+    end
+
+    @testset "run_batch — returns BatchResult, non-mutating" begin
+        prob = DesignProblem(
+            (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
+            parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
+            sigma=Returns(0.05),
+        )
+
+        θ_true = ComponentArray(A=1.0, R₂=10.0)
+        acquire(x) = prob.predict(θ_true, x) + 0.05 * randn()
+
+        candidates = candidate_grid(t=range(0.01, 0.5, length=20))
+        prior = Particles(prob, 200)
+        ξ = design(prob, candidates, prior; n=5, posterior_samples=50)
+
+        result = run_batch(ξ, prob, prior, acquire)
+
+        @test result isa BatchResult
+        @test result.posterior isa Particles
+        @test result.prior isa Particles
+        @test length(result.observations) == 5
+        @test result.design === ξ
+
+        # Prior should not have been mutated
+        ess_prior = effective_sample_size(prior)
+        @test ess_prior ≈ 200.0 atol=1.0
+    end
+
+    @testset "verify_optimality — returns OptimalityResult" begin
+        prob = DesignProblem(
+            (θ, x) -> [θ.A * exp(-θ.R₂ * x.t), θ.A * exp(-θ.R₂ * x.t * 2)],
+            parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
+            sigma=Returns([0.05, 0.05]),
+        )
+
+        candidates = candidate_grid(t=range(0.01, 0.5, length=20))
+        prior = Particles(prob, 100)
+        ξ = design(prob, candidates, prior; n=10, posterior_samples=50)
+
+        opt = verify_optimality(prob, candidates, prior, ξ; posterior_samples=50)
+        @test opt isa OptimalityResult
+        @test opt.is_optimal isa Bool
+        @test isfinite(opt.max_derivative)
+        @test opt.dimension > 0
+        @test length(opt.gateaux) == length(candidates)
+        @test opt.candidates === candidates
+    end
+
+    @testset "candidate_grid" begin
+        g1 = candidate_grid(t=range(0, 1, length=5))
+        @test length(g1) == 5
+        @test g1[1] == (t=0.0,)
+        @test g1[end] == (t=1.0,)
+
+        g2 = candidate_grid(i=[1, 2], t=[0.1, 0.2, 0.3])
+        @test length(g2) == 6
+        @test all(x -> haskey(x, :i) && haskey(x, :t), g2)
     end
 
     # =============================================
@@ -520,9 +583,9 @@ const od_loglikelihood = OptimalDesign.loglikelihood
 
     @testset "posterior_predictions and credible_band" begin
         prob = DesignProblem(
-            (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+            (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
             parameters=(A=Normal(1, 0.1), R₂=LogNormal(2, 0.5)),
-            sigma=(θ, ξ) -> 0.05,
+            sigma=(θ, x) -> 0.05,
         )
 
         post = Particles(prob, 200)

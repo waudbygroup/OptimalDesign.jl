@@ -27,72 +27,72 @@ function weighted_fim(J::AbstractVector, σ)
 end
 
 """
-    information(prob, θ, ξ)
+    information(prob, θ, x)
 
-Compute the Fisher Information Matrix at (θ, ξ) for the given DesignProblem.
+Compute the Fisher Information Matrix at (θ, x) for the given DesignProblem.
 
 Dispatches on whether an analytic Jacobian is provided or ForwardDiff is used.
 """
-function information(prob::AbstractDesignProblem, θ, ξ)
+function information(prob::AbstractDesignProblem, θ, x)
     J = if prob.jacobian === nothing
         # ForwardDiff: differentiate predict w.r.t. θ
-        y = prob.predict(θ, ξ)
+        y = prob.predict(θ, x)
         if y isa Real
             # Scalar observation: gradient -> reshape to 1×p
-            g = ForwardDiff.gradient(θ_ -> prob.predict(θ_, ξ), θ)
+            g = ForwardDiff.gradient(θ_ -> prob.predict(θ_, x), θ)
             reshape(g, 1, length(g))
         else
-            ForwardDiff.jacobian(θ_ -> prob.predict(θ_, ξ), θ)
+            ForwardDiff.jacobian(θ_ -> prob.predict(θ_, x), θ)
         end
     else
-        prob.jacobian(θ, ξ)
+        prob.jacobian(θ, x)
     end
-    σ = prob.sigma(θ, ξ)
+    σ = prob.sigma(θ, x)
     weighted_fim(J, σ)
 end
 
-function GradientCache(θ::AbstractVector, predict, ξ)
+function GradientCache(θ::AbstractVector, predict, x)
     p = length(θ)
     g_buf = zeros(p)
-    f = θ_ -> predict(θ_, ξ)
+    f = θ_ -> predict(θ_, x)
     cfg = ForwardDiff.GradientConfig(f, θ)
     GradientCache(g_buf, cfg)
 end
 
 """
-    information!(M, prob, θ, ξ; cache=nothing)
+    information!(M, prob, θ, x; cache=nothing)
 
 In-place version: compute the FIM and write result into pre-allocated matrix M.
 Accepts an optional `GradientCache` to avoid allocating ForwardDiff config each call.
 """
-function information!(M::AbstractMatrix, prob::AbstractDesignProblem, θ, ξ;
+function information!(M::AbstractMatrix, prob::AbstractDesignProblem, θ, x;
                       cache::Union{Nothing, GradientCache}=nothing)
     p = size(M, 1)
 
     if prob.jacobian === nothing
-        y = prob.predict(θ, ξ)
+        y = prob.predict(θ, x)
         if y isa Real
             # Scalar observation: gradient into buffer, then outer product
-            f = θ_ -> prob.predict(θ_, ξ)
+            f = θ_ -> prob.predict(θ_, x)
             if cache !== nothing
                 ForwardDiff.gradient!(cache.g_buf, f, θ, cache.cfg, Val{false}())
                 g = cache.g_buf
             else
                 g = ForwardDiff.gradient(f, θ)
             end
-            σ = prob.sigma(θ, ξ)
+            σ = prob.sigma(θ, x)
             σ² = σ^2
             @inbounds for j in 1:p, i in 1:p
                 M[i, j] = g[i] * g[j] / σ²
             end
         else
-            J = ForwardDiff.jacobian(θ_ -> prob.predict(θ_, ξ), θ)
-            σ = prob.sigma(θ, ξ)
+            J = ForwardDiff.jacobian(θ_ -> prob.predict(θ_, x), θ)
+            σ = prob.sigma(θ, x)
             weighted_fim!(M, J, σ)
         end
     else
-        J = prob.jacobian(θ, ξ)
-        σ = prob.sigma(θ, ξ)
+        J = prob.jacobian(θ, x)
+        σ = prob.sigma(θ, x)
         weighted_fim!(M, J, σ)
     end
     M
@@ -182,7 +182,7 @@ end
 
 """
 Dimension q of the parameter space of interest.
-For D-optimality, the GEQ bound is d(ξ) ≤ q at all candidates.
+For D-optimality, the GEQ bound is d(x) ≤ q at all candidates.
 """
 function _transformed_dimension(prob)
     if prob.transformation isa Identity

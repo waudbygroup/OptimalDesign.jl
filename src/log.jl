@@ -11,7 +11,7 @@ Base.lastindex(log::ExperimentLog) = lastindex(log.history)
 
 Extract all design points from the experiment log.
 """
-design_points(log::ExperimentLog) = [h.ξ for h in log.history]
+design_points(log::ExperimentLog) = [h.x for h in log.history]
 
 """
     observations(log::ExperimentLog)

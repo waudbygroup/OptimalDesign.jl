@@ -13,7 +13,7 @@ Convenience constructor for DeltaMethod that selects named parameters.
 Returns a function that extracts the named components from a ComponentArray.
 """
 function select(names::Symbol...)
-    DeltaMethod(θ -> ComponentArray(NamedTuple{names}(ntuple(i -> getproperty(θ, names[i]), length(names)))))
+    DeltaMethod(θ -> ComponentArray(NamedTuple{names}(ntuple(i -> getproperty(θ, names[i]), length(names)))), names)
 end
 
 # --- DesignProblem factory constructor ---
@@ -24,14 +24,14 @@ end
 Construct a design problem. Returns `DesignProblem` or `SwitchingDesignProblem`
 depending on whether `switching_cost` is provided.
 
-- `jacobian`: (θ, ξ) -> J matrix, or `nothing` for ForwardDiff (default: `nothing`)
-- `sigma`: (θ, ξ) -> noise (default: `Returns(1.0)`)
+- `jacobian`: (θ, x) -> J matrix, or `nothing` for ForwardDiff (default: `nothing`)
+- `sigma`: (θ, x) -> noise (default: `Returns(1.0)`). For constant noise, use `Returns(σ)`
 - `parameters`: NamedTuple of prior distributions (required)
 - `transformation`: defaults to `Identity()`
 - `criterion`: design criterion (default: `DCriterion()`)
-- `cost`: ξ -> Real, per-measurement cost (default: `Returns(1.0)`)
+- `cost`: x -> Real, per-measurement cost (default: `Returns(1.0)`)
 - `switching_cost`: `nothing` or `(:param, value)` — fixed cost when switching `param` (default: `nothing`)
-- `constraint`: (ξ, θ) -> Bool (default: `(ξ, θ) -> true`)
+- `constraint`: (x, θ) -> Bool (default: `(x, θ) -> true`)
 """
 function DesignProblem(
     predict;
@@ -42,7 +42,7 @@ function DesignProblem(
     criterion::DesignCriterion=DCriterion(),
     cost=Returns(1.0),
     switching_cost=nothing,
-    constraint=(ξ, θ) -> true,
+    constraint=(x, θ) -> true,
 )
     if switching_cost === nothing
         DesignProblem(predict, jacobian, sigma, parameters, transformation, criterion, cost, constraint)
@@ -54,18 +54,27 @@ function DesignProblem(
     end
 end
 
+"""
+    selected_parameters(prob) → Union{Nothing, Tuple{Symbol...}}
+
+Return the parameter names selected for estimation (via `select(...)`), or `nothing` if full D-optimality.
+"""
+selected_parameters(prob::AbstractDesignProblem) = _selected_parameters(prob.transformation)
+_selected_parameters(::Identity) = nothing
+_selected_parameters(dm::DeltaMethod) = dm.selected
+
 # --- Cost helpers ---
 
 """
-    total_cost(prob, prev, ξ)
+    total_cost(prob, prev, x)
 
-Total cost of measuring at `ξ` after `prev`, including any switching penalty.
+Total cost of measuring at `x` after `prev`, including any switching penalty.
 """
-total_cost(prob::DesignProblem, prev, ξ) = prob.cost(ξ)
+total_cost(prob::DesignProblem, prev, x) = prob.cost(x)
 
-function total_cost(prob::SwitchingDesignProblem, prev, ξ)
-    c = prob.cost(ξ)
-    if prev !== nothing && getfield(prev, prob.switching_param) != getfield(ξ, prob.switching_param)
+function total_cost(prob::SwitchingDesignProblem, prev, x)
+    c = prob.cost(x)
+    if prev !== nothing && getfield(prev, prob.switching_param) != getfield(x, prob.switching_param)
         c += prob.switching_cost
     end
     c

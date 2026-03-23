@@ -1,38 +1,43 @@
 # Plotting
 
-OptimalDesign.jl provides plotting functions built on [Makie.jl](https://docs.makie.org/). Most are not exported — call them as `OptimalDesign.plot_...` or bring them into scope explicitly.
+OptimalDesign.jl provides plotting functions built on [Makie.jl](https://docs.makie.org/). All plotting functions are exported.
 
-## Corner plots (exported)
+## Corner plots
 
-Compare one or more posteriors as marginal histograms and pairwise scatter plots:
+The simplest form takes a result object and automatically shows prior vs posterior:
 
 ```julia
-fig = plot_corner(prior, posterior;
-    params = [:A, :R₂],
-    labels = ["Prior", "Posterior"],
-    truth = (A = 1.0, R₂ = 25.0))
+# From a result object (shows prior vs posterior automatically)
+fig = plot_corner(result; truth = θ_true)
 ```
 
-- `params` selects which parameters to show (useful for high-dimensional models)
+To compare two results directly (e.g., optimal vs uniform):
+
+```julia
+fig = plot_corner(result_opt, result_unif;
+    labels = ["Optimal", "Uniform"], truth = θ_true)
+```
+
+- `truth` overlays dashed red crosshairs at known parameter values (accepts a `ComponentArray` or `NamedTuple`)
 - `labels` names each posterior in the legend
-- `truth` overlays dashed red crosshairs at known parameter values
-- Pass any number of `Particles` arguments to compare them
+- `params` selects which parameters to show (useful for high-dimensional models; defaults to all)
+- `highlight` bolds specific parameter labels (auto-set from `select(...)` when using the result form)
+- Pass any number of results or `Particles` arguments to compare them
 
 ## Credible bands
 
-Plot model predictions with uncertainty bands:
+Plot model predictions with uncertainty bands. Pass one or more result objects:
 
 ```julia
-# Single posterior
-fig = OptimalDesign.plot_credible_bands(prob, posterior, grid)
+# Single result — shows prior vs posterior with observations
+fig = plot_credible_bands(prob, result; truth = θ_true)
 
-# Compare several posteriors (stacked panels)
-fig = OptimalDesign.plot_credible_bands(prob,
-    [prior, posterior_opt, posterior_unif], grid;
-    labels = ["Prior", "Optimal", "Uniform"],
-    truth = θ_true,
-    observations = [nothing, result_opt.observations, result_unif.observations])
+# Compare two results — prior panel + one panel per result
+fig = plot_credible_bands(prob, result_opt, result_unif;
+    labels = ["Optimal", "Uniform"], truth = θ_true)
 ```
+
+The prediction grid is inferred from observations automatically. Pass `x_grid` to override.
 
 For vector-valued models, components are displayed as separate columns automatically.
 
@@ -42,10 +47,10 @@ Visualise where a batch design places its measurements:
 
 ```julia
 # 1D design variable — stem plot
-fig = OptimalDesign.plot_design_allocation(d, candidates)
+fig = plot_design_allocation(ξ, candidates)
 
 # 2D design variables — bubble plot (auto-detected)
-fig = OptimalDesign.plot_design_allocation(d, candidates)
+fig = plot_design_allocation(ξ, candidates)
 ```
 
 ## Gateaux derivative
@@ -53,17 +58,15 @@ fig = OptimalDesign.plot_design_allocation(d, candidates)
 Check optimality via the General Equivalence Theorem:
 
 ```julia
-gd = OptimalDesign.gateaux_derivative(prob, candidates, prior, d)
-opt = OptimalDesign.verify_optimality(prob, candidates, prior, d)
+# One-call: from an OptimalityResult
+opt = verify_optimality(prob, candidates, prior, ξ)
+fig = plot_gateaux(opt)
 
-# 1D — line plot
-fig = OptimalDesign.plot_gateaux(candidates, gd, opt.dimension)
-
-# 2D — scatter plot with colour (auto-detected)
-fig = OptimalDesign.plot_gateaux(candidates, gd, opt.dimension)
+# Or pass arguments directly
+fig = plot_gateaux(prob, candidates, prior, ξ)
 ```
 
-## Residual diagnostics (exported)
+## Residual diagnostics
 
 After an adaptive experiment, plot observation residuals and cumulative log evidence:
 
@@ -71,15 +74,13 @@ After an adaptive experiment, plot observation residuals and cumulative log evid
 fig = plot_residuals(result.log)
 ```
 
-## Posterior evolution animation (exported)
+## Posterior evolution animation
 
 Record an animation of the posterior evolving as observations arrive:
 
 ```julia
-record_corner_animation(result.log, "posterior_evolution.mp4";
-    params = [:A, :R₂],
-    truth = (A = 1.0, R₂ = 25.0),
-    framerate = 5)
+record_corner_animation(result.log, "posterior_evolution.gif";
+    truth = θ_true, framerate = 5)
 ```
 
 Requires `record_posterior = true` in `run_adaptive`.

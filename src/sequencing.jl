@@ -11,7 +11,7 @@ function _deduct_switching_overhead(prob::SwitchingDesignProblem, weights, candi
     # Count distinct groups of the switching parameter
     support_points = candidates[support_idx]
     param = prob.switching_param
-    groups = unique(getfield(ξ, param) for ξ in support_points)
+    groups = unique(getfield(x, param) for x in support_points)
     n_switches = length(groups) - 1
 
     overhead = n_switches * prob.switching_cost
@@ -26,17 +26,17 @@ end
 # --- Design sequencing ---
 
 """No-op sequencing for plain DesignProblem."""
-_sequence_design(::DesignProblem, result, ξ_prev) = result
+_sequence_design(::DesignProblem, result, x_prev) = result
 
-"""Reorder (ξ, count) pairs to minimise total switching cost."""
-function _sequence_design(prob::SwitchingDesignProblem, result, ξ_prev)
+"""Reorder (x, count) pairs to minimise total switching cost."""
+function _sequence_design(prob::SwitchingDesignProblem, result, x_prev)
     length(result) <= 1 && return result
 
     param = prob.switching_param
     points = [r[1] for r in result]
     counts = [r[2] for r in result]
 
-    best_order = _min_switching_order(prob, points, ξ_prev)
+    best_order = _min_switching_order(prob, points, x_prev)
     [(points[best_order[i]], counts[best_order[i]]) for i in eachindex(best_order)]
 end
 
@@ -44,7 +44,7 @@ end
 Find the permutation of support points that minimises total switching cost.
 Brute-force for n ≤ 8 (≤ 40320 perms), nearest-neighbour for larger.
 """
-function _min_switching_order(prob::SwitchingDesignProblem, points, ξ_prev)
+function _min_switching_order(prob::SwitchingDesignProblem, points, x_prev)
     n = length(points)
     param = prob.switching_param
 
@@ -53,14 +53,14 @@ function _min_switching_order(prob::SwitchingDesignProblem, points, ξ_prev)
         best_cost = Inf
         best_perm = collect(1:n)
         _tsp_brute_force!(best_perm, Ref(best_cost), Int[], trues(n),
-                          prob, points, ξ_prev)
+                          prob, points, x_prev)
         return best_perm
     end
 
     # Nearest-neighbour for larger support sets
     visited = falses(n)
     order = Int[]
-    prev_val = ξ_prev === nothing ? nothing : getfield(ξ_prev, param)
+    prev_val = x_prev === nothing ? nothing : getfield(x_prev, param)
 
     for _ in 1:n
         best_k = 0
@@ -84,14 +84,14 @@ end
 
 """Recursive brute-force TSP over support points."""
 function _tsp_brute_force!(best_perm, best_cost, current, available,
-                           prob, points, ξ_prev)
+                           prob, points, x_prev)
     param = prob.switching_param
     n = length(points)
 
     if length(current) == n
         # Compute total switching cost for this permutation
         cost = 0.0
-        prev_val = ξ_prev === nothing ? nothing : getfield(ξ_prev, param)
+        prev_val = x_prev === nothing ? nothing : getfield(x_prev, param)
         for i in current
             if prev_val !== nothing && getfield(points[i], param) != prev_val
                 cost += prob.switching_cost
@@ -110,7 +110,7 @@ function _tsp_brute_force!(best_perm, best_cost, current, available,
         available[k] = false
         push!(current, k)
         _tsp_brute_force!(best_perm, best_cost, current, available,
-                          prob, points, ξ_prev)
+                          prob, points, x_prev)
         pop!(current)
         available[k] = true
     end

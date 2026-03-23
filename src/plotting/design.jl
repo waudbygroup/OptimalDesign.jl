@@ -23,7 +23,7 @@ function plot_design_allocation(
 end
 
 function _plot_design_1d(candidates, w, xf::Symbol)
-    x_vals = [getfield(ξ, xf) for ξ in candidates]
+    x_vals = [getfield(x, xf) for x in candidates]
 
     fig = CairoMakie.Figure(size=(600, 300))
     ax = CairoMakie.Axis(fig[1, 1],
@@ -35,8 +35,8 @@ function _plot_design_1d(candidates, w, xf::Symbol)
 end
 
 function _plot_design_2d(candidates, w, xf::Symbol, yf::Symbol)
-    x_vals = [getfield(ξ, xf) for ξ in candidates]
-    y_vals = [getfield(ξ, yf) for ξ in candidates]
+    x_vals = [getfield(x, xf) for x in candidates]
+    y_vals = [getfield(x, yf) for x in candidates]
 
     fig = CairoMakie.Figure(size=(600, 500))
 
@@ -69,16 +69,16 @@ function _plot_design_2d(candidates, w, xf::Symbol, yf::Symbol)
 end
 
 """
-    plot_design_allocation(d::ExperimentalDesign, candidates; ...)
+    plot_design_allocation(ξ::ExperimentalDesign, candidates; ...)
 
 Plot the weight distribution for an `ExperimentalDesign`.
 """
 function plot_design_allocation(
-    d::ExperimentalDesign,
+    ξ::ExperimentalDesign,
     candidates::AbstractVector{<:NamedTuple};
     kwargs...,
 )
-    plot_design_allocation(candidates, weights(d, candidates); kwargs...)
+    plot_design_allocation(candidates, weights(ξ, candidates); kwargs...)
 end
 
 """
@@ -107,7 +107,7 @@ function plot_gateaux(
 end
 
 function _plot_gateaux_1d(candidates, gd, p, xf::Symbol)
-    x_vals = [getfield(ξ, xf) for ξ in candidates]
+    x_vals = [getfield(x, xf) for x in candidates]
 
     fig = CairoMakie.Figure(size=(600, 300))
     ax = CairoMakie.Axis(fig[1, 1],
@@ -121,8 +121,8 @@ function _plot_gateaux_1d(candidates, gd, p, xf::Symbol)
 end
 
 function _plot_gateaux_2d(candidates, gd, p, xf::Symbol, yf::Symbol)
-    x_vals = [getfield(ξ, xf) for ξ in candidates]
-    y_vals = [getfield(ξ, yf) for ξ in candidates]
+    x_vals = [getfield(x, xf) for x in candidates]
+    y_vals = [getfield(x, yf) for x in candidates]
 
     crange = (min(minimum(gd), 0.0), max(maximum(gd), p * 1.1))
 
@@ -146,6 +146,31 @@ function _plot_gateaux_2d(candidates, gd, p, xf::Symbol, yf::Symbol)
     end
 
     fig
+end
+
+"""
+    plot_gateaux(r::OptimalityResult; kwargs...)
+
+Plot the Gateaux derivative from a `verify_optimality` result.
+"""
+plot_gateaux(r::OptimalityResult; kwargs...) =
+    plot_gateaux(r.candidates, r.gateaux, r.dimension; kwargs...)
+
+"""
+    plot_gateaux(prob, candidates, posterior, ξ; kwargs...)
+
+Compute the Gateaux derivative and plot it in one call.
+Equivalent to `plot_gateaux(verify_optimality(prob, candidates, posterior, ξ; kwargs...))`.
+"""
+function plot_gateaux(
+    prob::AbstractDesignProblem,
+    candidates::AbstractVector{<:NamedTuple},
+    posterior::Particles,
+    ξ::ExperimentalDesign;
+    kwargs...,
+)
+    opt = verify_optimality(prob, candidates, posterior, ξ; kwargs...)
+    plot_gateaux(opt)
 end
 
 """

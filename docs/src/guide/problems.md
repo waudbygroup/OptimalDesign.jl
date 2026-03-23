@@ -6,9 +6,9 @@ A `DesignProblem` bundles everything the design algorithm needs to know: the mod
 
 ```julia
 prob = DesignProblem(
-    (θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t),
+    (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
     parameters = (A = LogUniform(0.1, 10), R₂ = Uniform(1, 50)),
-    sigma = (θ, ξ) -> 0.1,
+    sigma = Returns(0.1),
 )
 ```
 
@@ -18,17 +18,17 @@ The only required arguments are the prediction function and `parameters`. Everyt
 
 ### `predict` (positional, required)
 
-A function `(θ, ξ) -> y` mapping parameters `θ` and design point `ξ` to a predicted observation. Both `θ` and `ξ` are accessed by named fields.
+A function `(θ, x) -> y` mapping parameters `θ` and design point `x` to a predicted observation. Both `θ` and `x` are accessed by named fields.
 
 Scalar output:
 ```julia
-(θ, ξ) -> θ.A * exp(-θ.R₂ * ξ.t)
+(θ, x) -> θ.A * exp(-θ.R₂ * x.t)
 ```
 
 Vector output (multiple simultaneous observables):
 ```julia
-(θ, ξ) -> [θ.A₁ * exp(-θ.R₂₁ * ξ.t),
-            θ.A₂ * exp(-θ.R₂₂ * ξ.t)]
+(θ, x) -> [θ.A₁ * exp(-θ.R₂₁ * x.t),
+            θ.A₂ * exp(-θ.R₂₂ * x.t)]
 ```
 
 ### `parameters` (keyword, required)
@@ -43,12 +43,13 @@ The parameter names define the fields available on `θ` inside `predict` and `si
 
 ### `sigma` (keyword, default: constant 1)
 
-A function `(θ, ξ) -> σ` giving the noise standard deviation. Can depend on both parameters and design point:
+A callable `(θ, x) -> σ` giving the noise standard deviation. Can depend on both parameters and design point. For constant noise, use `Returns(σ)`:
 
 ```julia
-sigma = (θ, ξ) -> 0.1                     # constant noise
-sigma = (θ, ξ) -> 0.05 * abs(θ.A)         # signal-dependent noise
-sigma = (θ, ξ) -> [0.1, 0.2]              # vector noise (for vector models)
+sigma = Returns(0.1)                       # constant noise
+sigma = (θ, x) -> 0.05 * abs(θ.A)         # signal-dependent noise
+sigma = Returns([0.1, 0.2])               # constant vector noise (for vector models)
+sigma = (θ, x) -> [0.1, 0.2]              # vector noise that could depend on θ, x
 ```
 
 For vector models, `sigma` should return a vector of the same length as `predict`.
@@ -75,12 +76,12 @@ The optimality criterion:
 
 ### `jacobian` (keyword, default: `nothing`)
 
-An optional analytic Jacobian `(θ, ξ) -> J` where `J` is a `1×p` matrix (scalar model) or `m×p` matrix (vector model). If omitted, the Jacobian is computed automatically via ForwardDiff.
+An optional analytic Jacobian `(θ, x) -> J` where `J` is a `1×p` matrix (scalar model) or `m×p` matrix (vector model). If omitted, the Jacobian is computed automatically via ForwardDiff.
 
 ```julia
-jacobian = (θ, ξ) -> begin
-    e = exp(-θ.R₂ * ξ.t)
-    [θ.A * ξ.t * e   -θ.A * e]   # [∂y/∂A  ∂y/∂R₂]  — but transposed to 1×2
+jacobian = (θ, x) -> begin
+    e = exp(-θ.R₂ * x.t)
+    [θ.A * x.t * e   -θ.A * e]   # [∂y/∂A  ∂y/∂R₂]  — but transposed to 1×2
 end
 ```
 
@@ -88,10 +89,10 @@ Providing an analytic Jacobian avoids automatic differentiation overhead and can
 
 ### `cost` (keyword, default: constant 1)
 
-A function `ξ -> Real` giving the cost of a single measurement at design point `ξ`:
+A function `x -> Real` giving the cost of a single measurement at design point `x`:
 
 ```julia
-cost = ξ -> ξ.t + 1        # longer measurements cost more
+cost = x -> x.t + 1        # longer measurements cost more
 cost = Returns(1.0)         # unit cost (default)
 ```
 
@@ -109,27 +110,27 @@ This creates a `SwitchingDesignProblem` instead of a plain `DesignProblem`. The 
 
 ### `constraint` (keyword, default: always true)
 
-A function `(ξ, θ) -> Bool` that restricts the design space. Only candidates where the constraint returns `true` are considered:
+A function `(x, θ) -> Bool` that restricts the design space. Only candidates where the constraint returns `true` are considered:
 
 ```julia
-constraint = (ξ, θ) -> ξ.dose ≤ θ.max_dose   # parameter-dependent constraint
+constraint = (x, θ) -> x.dose ≤ θ.max_dose   # parameter-dependent constraint
 ```
 
 ## Candidates
 
-Design points are represented as `NamedTuple`s. The candidate set is a vector of all possible design points:
+Design points are represented as `NamedTuple`s. Use `candidate_grid` to generate the full outer product from named ranges:
 
 ```julia
 # One design variable
-candidates = [(t = t,) for t in range(0.001, 0.5, length = 200)]
+candidates = candidate_grid(t = range(0.001, 0.5, length = 200))
 
 # Two design variables
-candidates = [(t = t, dose = d) for t in range(0, 10, length = 20)
-                                 for d in range(0.1, 1.0, length = 15)]
+candidates = candidate_grid(t = range(0, 10, length = 20),
+                            dose = range(0.1, 1.0, length = 15))
 
 # Discrete + continuous
-candidates = [(channel = ch, t = t) for ch in [1, 2]
-                                      for t in range(0.01, 0.5, length = 100)]
+candidates = candidate_grid(channel = [1, 2],
+                            t = range(0.01, 0.5, length = 100))
 ```
 
-The field names in candidates must match what your `predict` function expects on `ξ`.
+The field names in candidates must match what your `predict` function expects on `x`.

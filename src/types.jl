@@ -6,7 +6,9 @@ struct Identity <: Transformation end
 
 struct DeltaMethod{F} <: Transformation
     f::F
+    selected::Union{Nothing,Tuple{Vararg{Symbol}}}  # parameter names, if constructed via select()
 end
+DeltaMethod(f) = DeltaMethod(f, nothing)
 
 # --- Design Criteria ---
 
@@ -27,7 +29,7 @@ struct DesignProblem{F,J,S,T,CR<:DesignCriterion,C,K} <: AbstractDesignProblem
     parameters::NamedTuple
     transformation::T
     criterion::CR
-    cost::C              # ξ -> Real (per-measurement cost)
+    cost::C              # x -> Real (per-measurement cost)
     constraint::K
 end
 
@@ -38,7 +40,7 @@ struct SwitchingDesignProblem{F,J,S,T,CR<:DesignCriterion,C,K} <: AbstractDesign
     parameters::NamedTuple
     transformation::T
     criterion::CR
-    cost::C              # ξ -> Real (per-measurement cost)
+    cost::C              # x -> Real (per-measurement cost)
     switching_param::Symbol
     switching_cost::Float64
     constraint::K
@@ -50,9 +52,13 @@ struct ExperimentalDesign{T<:NamedTuple}
     allocation::Vector{Tuple{T, Int}}
 end
 
+# --- Abstract posterior ---
+
+abstract type AbstractPosterior end
+
 # --- Particles ---
 
-struct Particles{T}
+struct Particles{T} <: AbstractPosterior
     particles::Vector{T}
     log_weights::Vector{Float64}
 end
@@ -87,4 +93,32 @@ mutable struct LiveDashboard
     obs_pred_median::Any        # Observable: credible band median
     obs_pred_upper::Any         # Observable: credible band upper
     control_state::Ref{Symbol}  # :running, :paused, :stopped
+end
+
+# --- Experiment results ---
+
+abstract type AbstractExperimentResult end
+
+struct BatchResult{P,D<:ExperimentalDesign} <: AbstractExperimentResult
+    prior::P
+    posterior::P
+    design::D
+    observations::Vector{NamedTuple}
+end
+
+struct AdaptiveResult{P} <: AbstractExperimentResult
+    prior::P
+    posterior::P
+    log::ExperimentLog
+    observations::Vector{NamedTuple}
+end
+
+# --- Optimality verification ---
+
+struct OptimalityResult{T<:NamedTuple}
+    is_optimal::Bool
+    max_derivative::Float64
+    dimension::Float64
+    gateaux::Vector{Float64}
+    candidates::Vector{T}
 end

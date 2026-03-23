@@ -4,7 +4,7 @@
 Compute an optimal experimental design: determine which design points to
 measure and how many times.
 
-Returns an `ExperimentalDesign` with (ξ, count) pairs.
+Returns an `ExperimentalDesign` with (x, count) pairs.
 
 For large `n`, uses the exchange algorithm for weight optimisation.
 For small `n`, uses greedy marginal-gain selection.
@@ -13,7 +13,7 @@ For small `n`, uses greedy marginal-gain selection.
 - `n = 1`: number of measurements to allocate
 - `budget = Inf`: total cost budget
 - `posterior_samples = 0`: number of posterior samples for utility evaluation
-- `ξ_prev = nothing`: previous design point (for cost computation)
+- `x_prev = nothing`: previous design point (for cost computation)
 - `exchange_algorithm = (n > 5)`: if true, use exchange algorithm for weight optimisation
 - `exchange_steps = 100`: iterations for exchange algorithm
 """
@@ -24,7 +24,7 @@ function design(
     n::Int=1,
     budget::Real=Inf,
     posterior_samples::Int=0,
-    ξ_prev=nothing,
+    x_prev=nothing,
     exchange_algorithm::Bool=n > 5,
     exchange_steps::Int=100,
     prior_designs::AbstractVector=NamedTuple[],
@@ -47,10 +47,10 @@ function design(
 
     if exchange_algorithm
         _select_batch(problem, candidates, particles, n;
-            posterior_samples, exchange_steps, budget, ξ_prev)
+            posterior_samples, exchange_steps, budget, x_prev)
     else
         _select_greedy(problem, candidates, particles, n;
-            criterion, posterior_samples, budget, ξ_prev, prior_designs)
+            criterion, posterior_samples, budget, x_prev, prior_designs)
     end
 end
 
@@ -82,12 +82,12 @@ Precomputes all per-particle FIMs to avoid redundant ForwardDiff calls.
 """
 function _select_greedy(
     prob, candidates, particles, n;
-    criterion, posterior_samples, budget, ξ_prev,
+    criterion, posterior_samples, budget, x_prev,
     prior_designs=NamedTuple[],
 )
     selected = NamedTuple[]
     remaining_budget = budget
-    prev = ξ_prev
+    prev = x_prev
     np = length(particles)
     p = length(first(particles))
     K = length(candidates)
@@ -115,8 +115,8 @@ function _select_greedy(
         for ji in 1:np
             θ = particles[ji]
             cache = GradientCache(θ, prob.predict, first(prior_designs))
-            for ξ_old in prior_designs
-                information!(M_buf, prob, θ, ξ_old; cache=cache)
+            for x_old in prior_designs
+                information!(M_buf, prob, θ, x_old; cache=cache)
                 M_running[ji] .+= M_buf
             end
         end
@@ -192,17 +192,17 @@ function _select_greedy(
 
         best_score == -Inf && break
 
-        ξ = candidates[best_idx]
-        push!(selected, ξ)
-        remaining_budget -= total_cost(prob, prev, ξ)
-        prev = ξ
+        x = candidates[best_idx]
+        push!(selected, x)
+        remaining_budget -= total_cost(prob, prev, x)
+        prev = x
 
         # Update running FIM from cache (no recomputation)
         for ji in 1:np
             M_running[ji] .+= M_cache[ji][best_idx]
         end
 
-        @debug "Greedy step $step: ξ=$(ξ), score=$(round(best_score; digits=4)), budget_left=$(round(remaining_budget; digits=2))"
+        @debug "Greedy step $step: x=$(x), score=$(round(best_score; digits=4)), budget_left=$(round(remaining_budget; digits=2))"
     end
 
     _compress(selected)
@@ -218,10 +218,10 @@ For `SwitchingDesignProblem`, the output is sequenced to minimise switching.
 function _select_batch(
     prob, candidates, particles, n;
     posterior_samples, exchange_steps,
-    budget=Inf, ξ_prev=nothing,
+    budget=Inf, x_prev=nothing,
 )
     # Per-measurement costs (1-arg cost function)
-    costs_vec = [prob.cost(ξ) for ξ in candidates]
+    costs_vec = [prob.cost(x) for x in candidates]
     has_uniform_cost = all(c -> c ≈ costs_vec[1], costs_vec)
     costs = has_uniform_cost ? nothing : costs_vec
 
@@ -243,7 +243,7 @@ function _select_batch(
     end
 
     # Sequence to minimise switching cost
-    ExperimentalDesign(_sequence_design(prob, result, ξ_prev))
+    ExperimentalDesign(_sequence_design(prob, result, x_prev))
 end
 
 # --- Apportionment ---
@@ -304,7 +304,7 @@ function apportion(weights::AbstractVector{<:Real}, budget::Real,
 end
 
 """
-Compress a list of selected candidates into (ξ, count) pairs.
+Compress a list of selected candidates into (x, count) pairs.
 """
 function _compress(selected::Vector{<:NamedTuple})
     isempty(selected) && return ExperimentalDesign(Tuple{NamedTuple,Int}[])
@@ -368,46 +368,49 @@ end
 # --- Batch experiment execution ---
 
 """
-    run_batch(d, prob, posterior, acquire)
+    run_batch(ξ, prob, prior, acquire) → BatchResult
 
 Execute a pre-computed design: acquire observations and update the posterior.
 
-`d` is a design from `design()` — a `Vector{Tuple{NamedTuple, Int}}` of (ξ, count) pairs.
-`acquire` is a callable `ξ -> y` that returns an observation.
+The `prior` is not mutated — a deep copy is made internally.
 
-Returns `(posterior=posterior, observations=[(ξ=..., y=...), ...])`.
+`ξ` is an `ExperimentalDesign` from `design()` — iterate it to get (x, count) pairs.
+`acquire` is a callable `x -> y` that returns an observation.
+
+Returns a `BatchResult` with fields `prior`, `posterior`, `design`, `observations`.
 """
 function run_batch(
-    d::ExperimentalDesign,
+    ξ::ExperimentalDesign,
     prob::AbstractDesignProblem,
-    posterior::Particles,
-    acquire;
+    prior,
+    acquire,
 )
+    posterior = deepcopy(prior)
     obs = NamedTuple[]
-    for (ξ, count) in d
+    for (x, count) in ξ
         for _ in 1:count
-            y = acquire(ξ)
-            push!(obs, (ξ=ξ, y=y))
+            y = acquire(x)
+            push!(obs, (x=x, y=y))
         end
     end
     update!(posterior, prob, obs)
-    (posterior=posterior, observations=obs)
+    BatchResult(prior, posterior, ξ, obs)
 end
 
 """
-    run_batch(prob, candidates, posterior, acquire; n=1, kwargs...)
+    run_batch(prob, candidates, prior, acquire; n=1, kwargs...) → BatchResult
 
 Convenience: compute an optimal design and execute it in one call.
-Equivalent to `d = design(...); run_batch(d, prob, posterior, acquire)`.
+Equivalent to `ξ = design(...); run_batch(ξ, prob, prior, acquire)`.
 """
 function run_batch(
     prob::AbstractDesignProblem,
     candidates::AbstractVector{<:NamedTuple},
-    posterior::Particles,
+    prior,
     acquire;
     n::Int=1,
     kwargs...,
 )
-    d = design(prob, candidates, posterior; n=n, kwargs...)
-    run_batch(d, prob, posterior, acquire)
+    ξ = design(prob, candidates, prior; n=n, kwargs...)
+    run_batch(ξ, prob, prior, acquire)
 end

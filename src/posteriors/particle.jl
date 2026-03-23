@@ -60,19 +60,19 @@ function effective_sample_size(posterior::Particles)
 end
 
 """
-    loglikelihood(prob::AbstractDesignProblem, θ, ξ, y)
+    loglikelihood(prob::AbstractDesignProblem, θ, x, y)
 
-Log-likelihood of observation y at (θ, ξ) under the noise model defined by prob.sigma.
+Log-likelihood of observation y at (θ, x) under the noise model defined by prob.sigma.
 
 Handles scalar, vector, and structured observations (NamedTuple with :value and :σ).
 """
-function loglikelihood(prob::AbstractDesignProblem, θ, ξ, y)
-    ŷ = prob.predict(θ, ξ)
+function loglikelihood(prob::AbstractDesignProblem, θ, x, y)
+    ŷ = prob.predict(θ, x)
     # Structured observation: use realised noise
     if y isa NamedTuple && haskey(y, :value) && haskey(y, :σ)
         return _loglikelihood_gaussian(y.value, ŷ, y.σ)
     end
-    σ = prob.sigma(θ, ξ)
+    σ = prob.sigma(θ, x)
     _loglikelihood_gaussian(y, ŷ, σ)
 end
 
@@ -101,15 +101,15 @@ function _loglikelihood_gaussian(y::AbstractVector, ŷ::Real, σ)
 end
 
 """
-    update!(posterior::Particles, prob::AbstractDesignProblem, ξ, y; ess_threshold=0.5, a=0.95)
+    update!(posterior::Particles, prob::AbstractDesignProblem, x, y; ess_threshold=0.5, a=0.95)
 
-Incorporate observation y at design point ξ. Delegates to the batch method
+Incorporate observation y at design point x. Delegates to the batch method
 with adaptive tempering, so even a single highly informative observation
 is tempered in gracefully.
 """
-function update!(posterior::Particles, prob::AbstractDesignProblem, ξ, y;
+function update!(posterior::Particles, prob::AbstractDesignProblem, x, y;
                  ess_threshold::Float64=0.5, a::Float64=0.95)
-    update!(posterior, prob, [(ξ=ξ, y=y)]; ess_threshold=ess_threshold, a=a)
+    update!(posterior, prob, [(x=x, y=y)]; ess_threshold=ess_threshold, a=a)
 end
 
 """
@@ -123,7 +123,7 @@ the tempering exponent β from 0 → 1 in adaptive steps. At each step, the
 step size Δβ is chosen by bisection so that the ESS stays just above
 `ess_threshold × n`, then particles are resampled with Liu-West jittering.
 
-Each element of `data` must have fields `ξ` (design point) and `y` (observation).
+Each element of `data` must have fields `x` (design point) and `y` (observation).
 """
 function update!(posterior::Particles, prob::AbstractDesignProblem,
                  data::AbstractVector{<:NamedTuple};
@@ -172,7 +172,7 @@ function _compute_total_ll(posterior::Particles, prob::AbstractDesignProblem,
         θ = posterior.particles[i]
         ll = 0.0
         for d in data
-            ll += loglikelihood(prob, θ, d.ξ, d.y)
+            ll += loglikelihood(prob, θ, d.x, d.y)
         end
         total_ll[i] = ll
     end
@@ -359,7 +359,7 @@ end
 # --- Observation diagnostics ---
 
 """
-    observation_diagnostics(posterior, prob, ξ, y)
+    observation_diagnostics(posterior, prob, x, y)
 
 Score an observation against the current posterior to detect model deviations.
 
@@ -370,12 +370,12 @@ Returns `(mean_residual, log_marginal)`:
 A running series of `log_marginal` values constitutes sequential Bayesian
 model checking. Sharp drops indicate observations surprising under the current model.
 """
-function observation_diagnostics(posterior::Particles, prob::AbstractDesignProblem, ξ, y)
+function observation_diagnostics(posterior::Particles, prob::AbstractDesignProblem, x, y)
     n = length(posterior.particles)
 
     # Log marginal likelihood: logsumexp of weighted log-likelihoods
     ll_terms = [
-        posterior.log_weights[i] + loglikelihood(prob, posterior.particles[i], ξ, y)
+        posterior.log_weights[i] + loglikelihood(prob, posterior.particles[i], x, y)
         for i in 1:n
     ]
     log_ml = logsumexp(ll_terms)
@@ -385,7 +385,7 @@ function observation_diagnostics(posterior::Particles, prob::AbstractDesignProbl
     y_scalar = y isa NamedTuple ? y.value : y
 
     mean_pred = sum(
-        w[i] * prob.predict(posterior.particles[i], ξ)
+        w[i] * prob.predict(posterior.particles[i], x)
         for i in 1:n
     )
     mean_residual = y_scalar .- mean_pred

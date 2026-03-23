@@ -4,8 +4,8 @@
 Compute the Gateaux derivative of the expected design criterion at each
 candidate, for a design with the given weights.
 
-For D-optimality (Identity):  d(ξ) = tr(M⁻¹ M(ξ))
-For Ds-optimality (DeltaMethod): d(ξ) = tr(C M(ξ)) where C = M⁻¹ ∇τ' Mτ ∇τ M⁻¹
+For D-optimality (Identity):  d(x) = tr(M⁻¹ M(x))
+For Ds-optimality (DeltaMethod): d(x) = tr(C M(x)) where C = M⁻¹ ∇τ' Mτ ∇τ M⁻¹
 
 For A/E criteria, numerical differentiation is used.
 
@@ -15,11 +15,11 @@ function gateaux_derivative(
     prob::AbstractDesignProblem,
     candidates::AbstractVector{<:NamedTuple},
     posterior::Particles,
-    d::ExperimentalDesign;
+    ξ::ExperimentalDesign;
     kwargs...,
 )
     particles = _get_particles(posterior)
-    gateaux_derivative(prob, candidates, particles, weights(d, candidates); kwargs...)
+    gateaux_derivative(prob, candidates, particles, weights(ξ, candidates); kwargs...)
 end
 
 function gateaux_derivative(
@@ -95,7 +95,7 @@ end
 For D-optimality with Identity: C = M⁻¹
 For Ds-optimality with DeltaMethod: C = M⁻¹ ∇τ' Mτ ∇τ M⁻¹
 
-In both cases, d(ξ) = tr(C M(ξ)).
+In both cases, d(x) = tr(C M(x)).
 """
 function _d_sensitivity_matrix(prob, M_w_inv, θ)
     _d_sensitivity_matrix(prob.transformation, M_w_inv, θ)
@@ -147,31 +147,30 @@ end
 # --- Optimality verification ---
 
 """
-    verify_optimality(prob, candidates, posterior, design; kwargs...)
+    verify_optimality(prob, candidates, posterior, ξ; kwargs...) → OptimalityResult
 
 Check the General Equivalence Theorem: at an optimal design, the
 Gateaux derivative should be ≤ q (dimension of interest) at all candidates,
 with equality at support points.
 
-Returns `(is_optimal, max_derivative, dimension)`.
+Returns an `OptimalityResult` with fields `is_optimal`, `max_derivative`,
+`dimension`, `gateaux` (full derivative vector), and `candidates`.
 """
 function verify_optimality(
     prob::AbstractDesignProblem,
     candidates::AbstractVector{<:NamedTuple},
     posterior::Particles,
-    d::ExperimentalDesign;
+    ξ::ExperimentalDesign;
     posterior_samples::Int=50,
     tol::Float64=0.05,
     costs::Union{Nothing,AbstractVector{<:Real}}=nothing,
 )
     particles = _get_particles(posterior)
-    gd = gateaux_derivative(prob, candidates, particles, weights(d, candidates);
+    gd = gateaux_derivative(prob, candidates, particles, weights(ξ, candidates);
         posterior_samples=posterior_samples, costs=costs)
 
     q = _transformed_dimension(prob)
     max_gd = maximum(gd)
 
-    (is_optimal=max_gd ≤ q + tol,
-        max_derivative=max_gd,
-        dimension=q)
+    OptimalityResult(max_gd ≤ q + tol, max_gd, q, gd, candidates)
 end

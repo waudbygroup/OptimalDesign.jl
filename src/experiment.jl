@@ -1,39 +1,36 @@
 # --- Logging helpers ---
 
 """Format a design point NamedTuple for compact display."""
-function _format_design_point(ξ::NamedTuple)
-    parts = [string(k, "=", round(v; digits=4)) for (k, v) in pairs(ξ)
+function _format_design_point(x::NamedTuple)
+    parts = [string(k, "=", round(v; digits=4)) for (k, v) in pairs(x)
              if v isa Real]
     join(parts, ", ")
 end
 
-"""Format a parameter ComponentArray for compact display."""
-function _format_params(θ)
-    parts = [string(k, "=", round(getproperty(θ, k); digits=3))
-             for k in keys(θ)]
-    join(parts, ", ")
-end
+# _format_params is defined in show.jl
 
 """
-    run_adaptive(prob, candidates, posterior, acquire; kwargs...)
+    run_adaptive(prob, candidates, prior, acquire; kwargs...) → AdaptiveResult
 
 Run an adaptive experiment: design → acquire → update, repeating until
 the budget is exhausted.
+
+The `prior` is not mutated — a deep copy is made internally.
 
 # Keyword arguments
 - `budget`: total cost budget (required)
 - `posterior_samples = 50`: mini-batch for utility evaluation
 - `n_per_step = 1`: measurements per adaptive step
 - `headless = false`: suppress GUI for testing
-- `prediction_grid = nothing`: dense ξ grid for credible band plots
+- `prediction_grid = nothing`: dense x grid for credible band plots
 - `record_posterior = false`: snapshot posterior at every step for animation/replay
 
-Returns `(posterior=posterior, log=ExperimentLog)`.
+Returns an `AdaptiveResult` with fields `prior`, `posterior`, `log`, `observations`.
 """
 function run_adaptive(
     prob::AbstractDesignProblem,
     candidates::AbstractVector{<:NamedTuple},
-    posterior::Particles,
+    prior,
     acquire;
     budget::Real,
     posterior_samples::Int=50,
@@ -42,10 +39,11 @@ function run_adaptive(
     prediction_grid=nothing,
     record_posterior::Bool=false,
 )
+    posterior = deepcopy(prior)
     prior_snap = record_posterior ? _snapshot_posterior(posterior) : nothing
     log = ExperimentLog(; prior_snapshot=prior_snap)
     spent = 0.0
-    ξ_prev = nothing
+    x_prev = nothing
     step = 0
     obs_count = 0
 
@@ -66,17 +64,17 @@ function run_adaptive(
         # Design next measurement(s)
         # Pass prior_designs so greedy scorer evaluates marginal gain over
         # accumulated information (essential when n_per_step < p for scalar obs)
-        step_design = design(prob, candidates, posterior;
+        ξ_step = design(prob, candidates, posterior;
             n=n_per_step,
-            posterior_samples=posterior_samples, ξ_prev=ξ_prev,
+            posterior_samples=posterior_samples, x_prev=x_prev,
             budget=budget - spent, #exchange_algorithm=false,
             prior_designs=design_points(log))
 
-        isempty(step_design) && break
+        isempty(ξ_step) && break
 
-        for (ξ, count) in step_design
+        for (x, count) in ξ_step
             for _ in 1:count
-                c = total_cost(prob, ξ_prev, ξ)
+                c = total_cost(prob, x_prev, x)
                 if spent + c > budget
                     @goto done
                 end
@@ -88,9 +86,9 @@ function run_adaptive(
                     while _check_controls(dashboard) == :pause
                         sleep(0.1)
                     end
-                    fetch(Threads.@spawn acquire(ξ))
+                    fetch(Threads.@spawn acquire(x))
                 else
-                    acquire(ξ)
+                    acquire(x)
                 end
 
                 spent += c
@@ -100,10 +98,10 @@ function run_adaptive(
                 ess_before = effective_sample_size(posterior)
 
                 # Diagnostics before update
-                diag = observation_diagnostics(posterior, prob, ξ, y)
+                diag = observation_diagnostics(posterior, prob, x, y)
 
                 # Update posterior
-                update!(posterior, prob, ξ, y)
+                update!(posterior, prob, x, y)
 
                 ess_after = effective_sample_size(posterior)
                 resampled = ess_after > ess_before + 10
@@ -112,13 +110,13 @@ function run_adaptive(
                 snapshot = record_posterior ? _snapshot_posterior(posterior) : nothing
 
                 # Record
-                push!(log, (ξ=ξ, y=y, cost=c, diagnostics=diag, step=step,
+                push!(log, (x=x, y=y, cost=c, diagnostics=diag, step=step,
                     posterior_snapshot=snapshot))
 
                 # Log: per-step detail at @debug, periodic summaries at @info
                 y_str = y isa Real ? round(y; digits=4) : y
                 resample_flag = resampled ? " [resampled]" : ""
-                @debug "Step $obs_count: ξ=($(_format_design_point(ξ))), " *
+                @debug "Step $obs_count: x=($(_format_design_point(x))), " *
                        "y=$y_str, cost=$(round(c; digits=2)), " *
                        "spent=$(round(spent; digits=2))/$budget, " *
                        "ESS=$(round(ess_after; digits=0)), " *
@@ -144,7 +142,7 @@ function run_adaptive(
                         spent, budget, prediction_grid)
                 end
 
-                ξ_prev = ξ
+                x_prev = x
             end
         end
     end
@@ -163,7 +161,8 @@ function run_adaptive(
           "ESS=$(round(ess_final; digits=0))"
     @info "  Final posterior: $(_format_params(μ_final))"
 
-    (posterior=posterior, log=log)
+    obs = NamedTuple[(x=e.x, y=e.y) for e in log]
+    AdaptiveResult(prior, posterior, log, obs)
 end
 
 """Estimate total steps from current pace."""

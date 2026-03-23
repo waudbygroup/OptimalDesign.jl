@@ -23,12 +23,12 @@ function safe_criterion(::ECriterion, M::AbstractMatrix)
 end
 
 """
-    expected_utility(prob, particles, ξ; posterior_samples=50)
+    expected_utility(prob, particles, x; posterior_samples=50)
 
-Compute the expected utility of design point ξ by Monte Carlo over posterior particles.
+Compute the expected utility of design point x by Monte Carlo over posterior particles.
 Uses the criterion from `prob.criterion`.
 """
-function expected_utility(prob::AbstractDesignProblem, particles::AbstractVector, ξ; posterior_samples::Int=50)
+function expected_utility(prob::AbstractDesignProblem, particles::AbstractVector, x; posterior_samples::Int=50)
     criterion = prob.criterion
     n = length(particles)
     bs = min(posterior_samples, n)
@@ -37,7 +37,7 @@ function expected_utility(prob::AbstractDesignProblem, particles::AbstractVector
     count = 0
     for i in idx
         θ = particles[i]
-        M = information(prob, θ, ξ)
+        M = information(prob, θ, x)
         Mt = transform(prob, M, θ)
         val = safe_criterion(criterion, Mt)
         if isfinite(val)
@@ -58,5 +58,5 @@ function score_candidates(prob::AbstractDesignProblem, posterior::Particles, can
 end
 
 function score_candidates(prob::AbstractDesignProblem, particles::AbstractVector, candidates::AbstractVector; posterior_samples::Int=50)
-    [expected_utility(prob, particles, ξ; posterior_samples=posterior_samples) for ξ in candidates]
+    [expected_utility(prob, particles, x; posterior_samples=posterior_samples) for x in candidates]
 end

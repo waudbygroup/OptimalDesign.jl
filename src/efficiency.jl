@@ -1,22 +1,25 @@
 """
-    efficiency(d_a, d_b, prob, candidates, posterior; kwargs...)
+    efficiency(ξ_a, ξ_b, prob, candidates, posterior; kwargs...)
 
-Relative efficiency of design_a vs design_b.
+Relative efficiency of design `ξ_a` vs design `ξ_b`.
 
 For D-optimality: (det M_a / det M_b)^(1/q) where q = dimension of interest.
-Efficiency > 1 means design_a is better; < 1 means design_b is better.
+Efficiency > 1 means ξ_a is better; < 1 means ξ_b is better.
 """
 function efficiency(
-    d_a::ExperimentalDesign,
-    d_b::ExperimentalDesign,
+    ξ_a::ExperimentalDesign,
+    ξ_b::ExperimentalDesign,
     prob::AbstractDesignProblem,
     candidates::AbstractVector{<:NamedTuple},
     posterior::Particles;
     posterior_samples::Int=50,
 )
     particles = _get_particles(posterior)
-    efficiency(weights(d_a, candidates), weights(d_b, candidates),
+    eff = efficiency(weights(ξ_a, candidates), weights(ξ_b, candidates),
         prob, candidates, particles; posterior_samples=posterior_samples)
+    extra = eff < 1 ? " (A needs ~$(round(1/eff; digits=1))× more measurements to match B)" : ""
+    @info "Efficiency of A vs B: $(round(eff; digits=4))$extra"
+    eff
 end
 
 function efficiency(

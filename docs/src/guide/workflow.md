@@ -8,14 +8,15 @@ You know how many measurements you can afford. Compute the optimal allocation up
 
 ```julia
 # Compute where to measure
-d = design(prob, candidates, prior; n = 20)
+ξ = design(prob, candidates, prior; n = 20)
 
 # Acquire data (replace `acquire` with your instrument)
-posterior = Particles(prob, 1000)
-result = run_batch(d, prob, posterior, acquire)
+result = run_batch(ξ, prob, prior, acquire)
 
-# result.posterior  — updated particle posterior
-# result.observations — vector of (ξ=..., y=...) named tuples
+# result.prior        — original particle prior
+# result.posterior     — updated particle posterior
+# result.observations  — vector of (x=..., y=...) named tuples
+# result.design        — the ExperimentalDesign used
 ```
 
 `design()` returns an `ExperimentalDesign` — a list of (design point, count) pairs. When displayed, it shows a compact summary with bar charts:
@@ -35,13 +36,15 @@ You have a budget and want to choose each measurement based on what you've learn
 
 ```julia
 result = run_adaptive(
-    prob, candidates, posterior, acquire;
+    prob, candidates, prior, acquire;
     budget = 100.0,       # total cost budget
     n_per_step = 1,       # measurements per step (1 = fully sequential)
 )
 
-# result.posterior — final posterior after all observations
-# result.log — ExperimentLog with full history
+# result.prior        — original prior
+# result.posterior     — final posterior after all observations
+# result.log           — ExperimentLog with full history
+# result.observations  — extracted from log
 ```
 
 Each step, `run_adaptive` calls `design()` internally to pick the next best measurement given the current posterior. The posterior is updated after each observation, so later measurements are informed by earlier ones.
@@ -57,16 +60,15 @@ Adaptive design is most valuable when:
 Sometimes you just want to compute and inspect a design without acquiring any data — for example, to compare criteria, check optimality, or plan a future experiment.
 
 ```julia
-d = design(prob, candidates, prior; n = 20)
+ξ = design(prob, candidates, prior; n = 20)
 
 # Check optimality via the General Equivalence Theorem
-opt = OptimalDesign.verify_optimality(prob, candidates, prior, d)
-opt.is_optimal      # true if the Gateaux derivative is ≤ q everywhere
-opt.max_derivative  # should be ≤ q (the transformed dimension)
+opt = verify_optimality(prob, candidates, prior, ξ)
+opt  # auto-displays is_optimal, max_derivative, etc.
 
 # Compare to a uniform design
-u = OptimalDesign.uniform_allocation(candidates, 20)
-eff = efficiency(u, d, prob, candidates, prior)
+ξ_unif = uniform_allocation(candidates, 20)
+eff = efficiency(ξ_unif, ξ, prob, candidates, prior)
 # eff < 1 means the uniform design is less efficient
 ```
 
@@ -81,11 +83,11 @@ eff = efficiency(u, d, prob, candidates, prior)
 
 ## The `acquire` function
 
-All workflows that collect data need an `acquire` function: a callable that takes a design point `ξ` (a `NamedTuple`) and returns an observation `y` (a scalar or vector).
+All workflows that collect data need an `acquire` function: a callable that takes a design point `x` (a `NamedTuple`) and returns an observation `y` (a scalar or vector).
 
 For simulated experiments:
 ```julia
-acquire = ξ -> prob.predict(θ_true, ξ) + σ * randn()
+acquire(x) = model(θ_true, x) + σ * randn()
 ```
 
-For real instruments, `acquire` would send commands to hardware and return the measured value. The design point `ξ` contains all the experimental settings (e.g., `ξ.t` for time, `ξ.dose` for concentration).
+For real instruments, `acquire` would send commands to hardware and return the measured value. The design point `x` contains all the experimental settings (e.g., `x.t` for time, `x.dose` for concentration).
