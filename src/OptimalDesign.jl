@@ -39,7 +39,8 @@ export effective_sample_size,
 
 # Plotting
 export plot_corner, plot_residuals, record_corner_animation,
-       plot_gateaux, plot_design_allocation, plot_credible_bands
+       plot_gateaux, plot_design_allocation, plot_credible_bands,
+       plot_convergence, record_dashboard
 
 # Types and problem definition
 include("types.jl")

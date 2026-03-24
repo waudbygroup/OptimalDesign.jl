@@ -1,7 +1,7 @@
 # Example 1: Exponential Decay — Batch Design, Simulated Experiment, Posterior
 #
-# Simplest case. One design variable (time t), two parameters (A, R₂),
-# interest in R₂ via Ds-optimality (DeltaMethod transformation).
+# Simplest case. One design variable (time t), two parameters (A, k),
+# interest in k via Ds-optimality (DeltaMethod transformation).
 #
 # Demonstrates the full workflow:
 #   1. Problem setup and prior
@@ -17,7 +17,6 @@ using CairoMakie
 using ComponentArrays
 using Distributions
 using Random
-using GLMakie
 
 # ENV["JULIA_DEBUG"] = OptimalDesign
 Random.seed!(42)
@@ -27,11 +26,11 @@ Random.seed!(42)
 # ═══════════════════════════════════════════════════
 
 function model(θ, x)
-    θ.A * exp(-θ.R₂ * x.t)
+    θ.A * exp(-θ.k * x.t)
 end
 
 # Ground truth (unknown to the design algorithm)
-θ_true = ComponentArray(A=1.0, R₂=25.0)
+θ_true = ComponentArray(A=1.0, k=25.0)
 σ_true = 0.1
 
 # Simulated acquisition function
@@ -39,10 +38,10 @@ acquire(x) = model(θ_true, x) + σ_true * randn()
 
 n = 50
 
-println("Problem: y = A exp(-R₂ t) + noise")
-println("Truth:   A = $(θ_true.A), R₂ = $(θ_true.R₂)")
+println("Problem: y = A exp(-k t) + noise")
+println("Truth:   A = $(θ_true.A), k = $(θ_true.k)")
 println("Acquire: $n measurements")
-println("Goal:    Ds-optimal design for R₂\n")
+println("Goal:    Ds-optimal design for k\n")
 
 # ═══════════════════════════════════════════════════
 # 2. Design problem and prior
@@ -50,8 +49,8 @@ println("Goal:    Ds-optimal design for R₂\n")
 
 prob = DesignProblem(
     model,
-    parameters=(A=LogUniform(0.1, 10), R₂=Uniform(1, 50)),
-    transformation=select(:R₂),
+    parameters=(A=LogUniform(0.1, 10), k=Uniform(1, 50)),
+    transformation=select(:k),
     sigma=Returns(σ_true),
 )
 
@@ -90,10 +89,10 @@ println("\n--- Simulated experiments ---")
 result_opt = run_batch(ξ, prob, prior, acquire)
 result_unif = run_batch(ξ_unif, prob, prior, acquire)
 
-μ_opt = mean(result_opt.posterior)
-μ_unif = mean(result_unif.posterior)
-println("Posterior mean (optimal):  A = $(round(μ_opt.A; digits=3)), R₂ = $(round(μ_opt.R₂; digits=2))")
-println("Posterior mean (uniform):  A = $(round(μ_unif.A; digits=3)), R₂ = $(round(μ_unif.R₂; digits=2))")
+μ_opt = mean(result_opt)
+μ_unif = mean(result_unif)
+println("Posterior mean (optimal):  A = $(round(μ_opt.A; digits=3)), k = $(round(μ_opt.k; digits=2))")
+println("Posterior mean (uniform):  A = $(round(μ_unif.A; digits=3)), k = $(round(μ_unif.k; digits=2))")
 
 # ═══════════════════════════════════════════════════
 # 7. Plots

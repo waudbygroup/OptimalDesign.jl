@@ -23,7 +23,7 @@ The `prior` is not mutated — a deep copy is made internally.
 - `n_per_step = 1`: measurements per adaptive step
 - `headless = false`: suppress GUI for testing
 - `prediction_grid = nothing`: dense x grid for credible band plots
-- `record_posterior = false`: snapshot posterior at every step for animation/replay
+- `record_posterior = true`: snapshot posterior at every step for animation/replay
 
 Returns an `AdaptiveResult` with fields `prior`, `posterior`, `log`, `observations`.
 """
@@ -37,7 +37,7 @@ function run_adaptive(
     n_per_step::Int=1,
     headless::Bool=false,
     prediction_grid=nothing,
-    record_posterior::Bool=false,
+    record_posterior::Bool=true,
 )
     posterior = deepcopy(prior)
     prior_snap = record_posterior ? _snapshot_posterior(posterior) : nothing
@@ -82,7 +82,7 @@ function run_adaptive(
                 # Acquire observation (on background task if dashboard active)
                 y = if dashboard !== nothing
                     # Check for pause/stop
-                    _check_controls(dashboard) == :stop && @goto done
+                    _check_controls(dashboard) == :stopped && @goto done
                     while _check_controls(dashboard) == :pause
                         sleep(0.1)
                     end
@@ -123,8 +123,8 @@ function run_adaptive(
                        "log_ml=$(round(diag.log_marginal; digits=2))$resample_flag"
 
                 if resampled
-                    @info "ESS dropped below threshold, resampled at step $obs_count " *
-                          "(ESS: $(round(ess_before; digits=0)) → $(round(ess_after; digits=0)))"
+                    @debug "ESS dropped below threshold, resampled at step $obs_count " *
+                           "(ESS: $(round(ess_before; digits=0)) → $(round(ess_after; digits=0)))"
                 end
 
                 # Periodic @info summary

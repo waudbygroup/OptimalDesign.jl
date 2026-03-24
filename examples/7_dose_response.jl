@@ -12,7 +12,6 @@ using ComponentArrays
 using Distributions
 using LinearAlgebra
 using Random
-using GLMakie
 
 Random.seed!(42)
 

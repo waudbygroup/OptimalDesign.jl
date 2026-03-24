@@ -21,7 +21,6 @@ using Distributions
 using ForwardDiff
 using LinearAlgebra
 using Random
-using GLMakie
 
 # ENV["JULIA_DEBUG"] = OptimalDesign
 Random.seed!(42)

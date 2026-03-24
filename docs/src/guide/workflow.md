@@ -4,13 +4,21 @@ OptimalDesign.jl supports three workflows, each built from the same core functio
 
 ## 1. Batch design → acquire
 
-You know how many measurements you can afford. Compute the optimal allocation up front, then acquire all data at once.
+You know the experiment size up front. Compute the optimal allocation, then acquire all data at once.
+
+Specify the size either as a number of measurements (`n`) or a total cost budget (`budget`):
 
 ```julia
-# Compute where to measure
+# Fixed number of measurements
 ξ = design(prob, candidates, prior; n = 20)
 
-# Acquire data (replace `acquire` with your instrument)
+# Or: budget-based — number of measurements determined by costs
+ξ = design(prob, candidates, prior; budget = 50.0)
+```
+
+Then acquire and update:
+
+```julia
 result = run_batch(ξ, prob, prior, acquire)
 
 # result.prior        — original particle prior
@@ -19,16 +27,13 @@ result = run_batch(ξ, prob, prior, acquire)
 # result.design        — the ExperimentalDesign used
 ```
 
-`design()` returns an `ExperimentalDesign` — a list of (design point, count) pairs. When displayed, it shows a compact summary with bar charts:
+`design()` returns an `ExperimentalDesign` — a list of (design point, count) pairs. `run_batch()` iterates over the design, calls your `acquire` function at each point, and updates the posterior with all observations using likelihood tempering.
 
-```
-ExperimentalDesign: 20 measurements at 3 support points
-  t=0.001   ×7  ███████
-  t=0.0416  ×6  ██████
-  t=0.5     ×7  ███████
-```
+There is also a convenience form that designs and acquires in one call:
 
-`run_batch()` iterates over the design, calls your `acquire` function at each point, and updates the posterior with all observations using likelihood tempering.
+```julia
+result = run_batch(prob, candidates, prior, acquire; budget = 50.0)
+```
 
 ## 2. Adaptive sequential design
 
@@ -49,6 +54,8 @@ result = run_adaptive(
 
 Each step, `run_adaptive` calls `design()` internally to pick the next best measurement given the current posterior. The posterior is updated after each observation, so later measurements are informed by earlier ones.
 
+Use `n_per_step > 1` to design mini-batches — useful when switching costs make fully sequential design wasteful.
+
 Adaptive design is most valuable when:
 
 - The optimal design depends strongly on the (unknown) parameter values
@@ -62,14 +69,12 @@ Sometimes you just want to compute and inspect a design without acquiring any da
 ```julia
 ξ = design(prob, candidates, prior; n = 20)
 
-# Check optimality via the General Equivalence Theorem
-opt = verify_optimality(prob, candidates, prior, ξ)
-opt  # auto-displays is_optimal, max_derivative, etc.
+# Check optimality visually
+plot_gateaux(prob, candidates, prior, ξ)
 
 # Compare to a uniform design
 ξ_unif = uniform_allocation(candidates, 20)
-eff = efficiency(ξ_unif, ξ, prob, candidates, prior)
-# eff < 1 means the uniform design is less efficient
+efficiency(ξ_unif, ξ, prob, candidates, prior)
 ```
 
 ## Choosing between workflows

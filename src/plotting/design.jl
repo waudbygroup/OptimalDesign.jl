@@ -174,6 +174,94 @@ function plot_gateaux(
 end
 
 """
+    plot_convergence(log::ExperimentLog; truth=nothing, params=nothing, x_axis=:obs)
+
+Plot the convergence of parameter estimates over the course of an adaptive experiment.
+Shows the posterior mean ± 1 standard deviation at each step.
+
+Requires `record_posterior = true` in `run_adaptive`.
+
+# Keyword arguments
+- `truth`: true parameter values to overlay as dashed horizontal lines
+- `params::Vector{Symbol}`: which parameters to show (default: all)
+- `x_axis::Symbol`: `:obs` for observation number, `:cost` for cumulative cost
+"""
+function plot_convergence(
+    log::ExperimentLog;
+    truth=nothing,
+    params::Union{Nothing,Vector{Symbol}}=nothing,
+    x_axis::Symbol=:obs,
+)
+    has_posterior_history(log) || error(
+        "ExperimentLog has no posterior snapshots. " *
+        "Use record_posterior=true in run_adaptive.")
+
+    θ1 = first(log.prior_snapshot.particles)
+    names = params !== nothing ? params : collect(keys(θ1))
+    n_params = length(names)
+    n_steps = length(log)
+
+    # Compute mean and std at each step from snapshots
+    means = [zeros(n_steps) for _ in 1:n_params]
+    stds = [zeros(n_steps) for _ in 1:n_params]
+
+    for s in 1:n_steps
+        snap = log[s].posterior_snapshot
+        w = exp.(snap.log_weights .- logsumexp(snap.log_weights))
+        for (pi, name) in enumerate(names)
+            vals = [getproperty(p, name) for p in snap.particles]
+            μ = sum(w .* vals)
+            σ = sqrt(sum(w .* (vals .- μ).^2))
+            means[pi][s] = μ
+            stds[pi][s] = σ
+        end
+    end
+
+    # X axis: observation number or cumulative cost
+    x_vals = if x_axis == :cost
+        cumulative_cost(log)
+    else
+        collect(1:n_steps)
+    end
+    x_label = x_axis == :cost ? "Cumulative cost" : "Observation"
+
+    default_colors = [:royalblue, :orange, :green, :purple, :red, :cyan]
+
+    fig = CairoMakie.Figure(size=(700, 250 * n_params))
+
+    for (pi, name) in enumerate(names)
+        ax = CairoMakie.Axis(fig[pi, 1];
+            xlabel=pi == n_params ? x_label : "",
+            ylabel=string(name))
+
+        c = default_colors[mod1(pi, length(default_colors))]
+
+        CairoMakie.band!(ax, x_vals, means[pi] .- stds[pi], means[pi] .+ stds[pi];
+            color=(c, 0.2))
+        CairoMakie.lines!(ax, x_vals, means[pi]; color=c, linewidth=2)
+
+        if truth !== nothing
+            tv = getproperty(truth, name)
+            CairoMakie.hlines!(ax, [tv]; color=:red, linestyle=:dash, linewidth=1.5)
+        end
+
+        if pi < n_params
+            CairoMakie.hidexdecorations!(ax; grid=false)
+        end
+    end
+
+    fig
+end
+
+"""
+    plot_convergence(result::AdaptiveResult; kwargs...)
+
+Plot convergence from an `AdaptiveResult`. Convenience wrapper.
+"""
+plot_convergence(result::AdaptiveResult; kwargs...) =
+    plot_convergence(result.log; kwargs...)
+
+"""
     plot_residuals(log::ExperimentLog)
 
 Plot residual diagnostics from an experiment log.

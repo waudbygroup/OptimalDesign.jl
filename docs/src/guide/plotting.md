@@ -41,6 +41,22 @@ The prediction grid is inferred from observations automatically. Pass `x_grid` t
 
 For vector-valued models, components are displayed as separate columns automatically.
 
+## Convergence
+
+Track how parameter estimates evolve over an adaptive experiment. Shows the posterior mean ± 1 standard deviation at each step, with optional true value overlay:
+
+```julia
+fig = plot_convergence(result; truth = θ_true)
+
+# Show only specific parameters
+fig = plot_convergence(result; truth = θ_true, params = [:k₁, :k₂])
+
+# Plot against cumulative cost instead of observation number
+fig = plot_convergence(result; truth = θ_true, x_axis = :cost)
+```
+
+Requires `record_posterior = true` in `run_adaptive`.
+
 ## Design allocation
 
 Visualise where a batch design places its measurements:
@@ -55,15 +71,15 @@ fig = plot_design_allocation(ξ, candidates)
 
 ## Gateaux derivative
 
-Check optimality via the General Equivalence Theorem:
+Check optimality visually — the derivative should touch the bound at support points and lie below everywhere else:
 
 ```julia
-# One-call: from an OptimalityResult
+# One-call from arguments
+fig = plot_gateaux(prob, candidates, prior, ξ)
+
+# Or from an OptimalityResult
 opt = verify_optimality(prob, candidates, prior, ξ)
 fig = plot_gateaux(opt)
-
-# Or pass arguments directly
-fig = plot_gateaux(prob, candidates, prior, ξ)
 ```
 
 ## Residual diagnostics

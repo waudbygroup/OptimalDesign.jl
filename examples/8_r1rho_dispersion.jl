@@ -9,9 +9,9 @@
 # Demonstrates:
 #   1. Two-dimensional design space (spin-lock time × spin-lock frequency)
 #   2. Adaptive experiment with 2D candidates
-#   3. Batch design for comparison (matched observation count)
+#   3. Batch design for comparison (same budget)
 #   4. 2D design allocation (bubble plot) and Gateaux derivative
-#   5. Posterior evolution animation
+#   5. Posterior convergence and evolution animation
 #   6. Corner plots for dispersion parameters
 
 using OptimalDesign
@@ -52,8 +52,8 @@ acquire(x) = model(θ_true, x) + σ_true * randn()
 prob = DesignProblem(
     model,
     parameters=(
-        I₀=LogUniform(0.01, 100),
-        R₂₀=Uniform(0, 20),
+        I₀=LogUniform(0.001, 1000),
+        R₂₀=Uniform(0, 50),
         A=Uniform(0, 100),
         K=LogUniform(100, 100_000),
     ),
@@ -71,14 +71,11 @@ candidates = candidate_grid(tSL=tSL_vals, νSL=νSL_vals)
 # 3. Adaptive experiment
 # ═══════════════════════════════════════════════
 
-prior_adaptive = Particles(prob, 1000)
+prior = Particles(prob, 10000)
 
 result_adaptive = run_adaptive(
-    prob, candidates, prior_adaptive, acquire;
+    prob, candidates, prior, acquire;
     budget=budget,
-    n_per_step=1,
-    headless=true,
-    record_posterior=true,
 )
 display(result_adaptive)
 
@@ -89,26 +86,22 @@ n_adaptive = length(log_adaptive)
 # 4. Batch design for comparison (same n)
 # ═══════════════════════════════════════════════
 
-prior_batch = Particles(prob, 1000)
-
-ξ = design(prob, candidates, prior_batch; n=n_adaptive)
+ξ = design(prob, candidates, prior; n=n_adaptive)
 display(ξ)
 
-result_batch = run_batch(ξ, prob, prior_batch, acquire)
+result_batch = run_batch(ξ, prob, prior, acquire)
 display(result_batch)
 
 # ═══════════════════════════════════════════════
 # 5. Optimality verification (batch design)
 # ═══════════════════════════════════════════════
 
-opt_check = verify_optimality(prob, candidates, prior_batch, ξ)
+opt_check = verify_optimality(prob, candidates, prior, ξ)
 display(opt_check)
 
 # ═══════════════════════════════════════════════
 # 6. Plots
 # ═══════════════════════════════════════════════
-
-println("\nGenerating plots...")
 
 # --- Figure 1: Adaptive trajectory in 2D design space ---
 
@@ -142,7 +135,7 @@ t_slice = 0.08
 slice_grid = candidate_grid(tSL=[t_slice], νSL=range(300, 15_000, length=100))
 
 fig4 = plot_credible_bands(prob, result_adaptive, result_batch;
-    labels=["Adaptive ($n_adaptive obs)", "Batch ($n_adaptive obs)"],
+    labels=["Adaptive", "Batch"],
     truth=θ_true, x_grid=slice_grid)
 
 # --- Figure 5: Corner plot — adaptive vs batch posterior ---
@@ -150,14 +143,20 @@ fig4 = plot_credible_bands(prob, result_adaptive, result_batch;
 fig5 = plot_corner(result_adaptive, result_batch;
     labels=["Adaptive", "Batch"], truth=θ_true)
 
-# --- Figure 6: Posterior evolution animation ---
+# --- Figure 6: Convergence ---
+
+fig6 = plot_convergence(result_adaptive; truth=θ_true, params=[:R₂₀, :A, :K])
+
+# --- Figure 7: Posterior evolution animation ---
 
 if has_posterior_history(log_adaptive)
-    println("Recording posterior evolution animation...")
     record_corner_animation(log_adaptive, "ex8_posterior_evolution.gif";
         params=[:R₂₀, :A, :K],
-        truth=θ_true,
-        framerate=5)
+        truth=θ_true, framerate=5)
 end
+
+# --- Figure 8: Dashboard replay animation ---
+
+record_dashboard(result_adaptive, prob; filename="ex8_dashboard.gif")
 
 println("\nDone. Figures created.")

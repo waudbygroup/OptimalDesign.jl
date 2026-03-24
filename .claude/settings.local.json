@@ -4,7 +4,11 @@
       "Bash(julia -e 'using Pkg; Pkg.activate\\(\"\".\"\"\\); Pkg.add\\(\"\"LogExpFunctions\"\"\\); Pkg.resolve\\(\\)')",
       "Bash(julia --project -e 'using Pkg; Pkg.test\\(\\)')",
       "Bash(grep -n \"fw_norm\\\\|fw_evaluate_linearization\" /Users/chris/git/OptimalDesign.jl/Kirstine.jl-main/src/*.jl)",
-      "Bash(xargs sed:*)"
+      "Bash(xargs sed:*)",
+      "Bash(find src:*)",
+      "Bash(find examples:*)",
+      "Bash(find docs:*)",
+      "Bash(grep -rn ξ --include=*.jl --include=*.md .)"
     ]
   }
 }

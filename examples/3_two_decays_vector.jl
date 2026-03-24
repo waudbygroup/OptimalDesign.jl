@@ -1,7 +1,7 @@
 # Example 3: Two Decays, Vector Observation — Simultaneous Measurement
 #
 # Two exponential decays observed simultaneously as a vector (y₁, y₂) at
-# a single time t. Four parameters (A₁, R₂₁, A₂, R₂₂), interest in both rates.
+# a single time t. Four parameters (A₁, k₁, A₂, k₂), interest in both rates.
 # The Jacobian is a 2×4 matrix. The FIM sums information from both observables.
 #
 # Demonstrates: Vector-valued predict, vector sigma, FIM from multiple
@@ -13,7 +13,6 @@ using ComponentArrays
 using Distributions
 using LinearAlgebra
 using Random
-using GLMakie
 
 # ENV["JULIA_DEBUG"] = OptimalDesign
 Random.seed!(42)
@@ -23,18 +22,18 @@ Random.seed!(42)
 # ═══════════════════════════════════════════════
 
 function model(θ, x)
-    [θ.A₁ * exp(-θ.R₂₁ * x.t),
-        θ.A₂ * exp(-θ.R₂₂ * x.t)]
+    [θ.A₁ * exp(-θ.k₁ * x.t),
+        θ.A₂ * exp(-θ.k₂ * x.t)]
 end
 
 # Ground truth (unknown to the design algorithm)
-θ_true = ComponentArray(A₁=7.0, R₂₁=8.0, A₂=1.0, R₂₂=80.0)
+θ_true = ComponentArray(A₁=7.0, k₁=8.0, A₂=1.0, k₂=80.0)
 σ_true = 0.05
 n_obs = 100
 
 acquire(x) = model(θ_true, x) .+ σ_true .* randn(2)
 
-println("Truth: A₁=$(θ_true.A₁), R₂₁=$(θ_true.R₂₁), A₂=$(θ_true.A₂), R₂₂=$(θ_true.R₂₂)")
+println("Truth: A₁=$(θ_true.A₁), k₁=$(θ_true.k₁), A₂=$(θ_true.A₂), k₂=$(θ_true.k₂)")
 
 # ═══════════════════════════════════════════════
 # 2. Design problem and prior
@@ -43,9 +42,9 @@ println("Truth: A₁=$(θ_true.A₁), R₂₁=$(θ_true.R₂₁), A₂=$(θ_true
 prob = DesignProblem(
     model,
     parameters=(
-        A₁=LogUniform(0.1, 10), R₂₁=Uniform(0.1, 100),
-        A₂=LogUniform(0.1, 10), R₂₂=Uniform(0.1, 100)),
-    transformation=select(:R₂₁, :R₂₂),
+        A₁=LogUniform(0.1, 10), k₁=Uniform(0.1, 100),
+        A₂=LogUniform(0.1, 10), k₂=Uniform(0.1, 100)),
+    transformation=select(:k₁, :k₂),
     sigma=Returns([σ_true, σ_true]),
     cost=x -> x.t + 1,
 )

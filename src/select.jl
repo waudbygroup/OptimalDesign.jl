@@ -1,16 +1,20 @@
 """
-    design(problem, candidates, posterior; kwargs...)
+    design(problem, candidates, posterior; n=1, budget=Inf, kwargs...)
 
 Compute an optimal experimental design: determine which design points to
 measure and how many times.
 
 Returns an `ExperimentalDesign` with (x, count) pairs.
 
+Specify the experiment size via `n` (number of measurements) or `budget` (total cost).
+When `budget` is finite and `n` is not specified, the number of measurements is
+determined automatically from the budget and per-measurement costs.
+
 For large `n`, uses the exchange algorithm for weight optimisation.
 For small `n`, uses greedy marginal-gain selection.
 
 # Keyword arguments
-- `n = 1`: number of measurements to allocate
+- `n`: number of measurements to allocate (default: inferred from budget if budget is finite, otherwise 1)
 - `budget = Inf`: total cost budget
 - `posterior_samples = 0`: number of posterior samples for utility evaluation
 - `x_prev = nothing`: previous design point (for cost computation)
@@ -21,14 +25,27 @@ function design(
     problem::AbstractDesignProblem,
     candidates::AbstractVector{<:NamedTuple},
     posterior;
-    n::Int=1,
+    n::Union{Int,Nothing}=nothing,
     budget::Real=Inf,
     posterior_samples::Int=0,
     x_prev=nothing,
-    exchange_algorithm::Bool=n > 5,
+    exchange_algorithm::Union{Bool,Nothing}=nothing,
     exchange_steps::Int=100,
     prior_designs::AbstractVector=NamedTuple[],
 )
+    # Infer n from budget if not specified
+    if n === nothing
+        if isfinite(budget)
+            # Estimate n from budget / mean cost
+            mean_cost = sum(problem.cost(x) for x in candidates) / length(candidates)
+            n = max(1, floor(Int, budget / mean_cost))
+        else
+            n = 1
+        end
+    end
+
+    use_exchange = exchange_algorithm !== nothing ? exchange_algorithm : (n > 5)
+
     all_particles = _get_particles(posterior)
 
     if posterior_samples ≤ 0
@@ -45,7 +62,7 @@ function design(
 
     criterion = problem.criterion
 
-    if exchange_algorithm
+    if use_exchange
         _select_batch(problem, candidates, particles, n;
             posterior_samples, exchange_steps, budget, x_prev)
     else
@@ -231,9 +248,12 @@ function _select_batch(
         max_iter=exchange_steps,
         costs=costs)
 
-    # Apportion weights to n measurement slots.
-    # Budget enforcement is handled by the caller (run_adaptive tracks per-obs cost).
-    counts = apportion(weights, n)
+    # Apportion: use budget-aware method when costs vary and budget is finite
+    counts = if costs !== nothing && isfinite(budget)
+        apportion(weights, budget, costs_vec)
+    else
+        apportion(weights, n)
+    end
 
     result = Tuple{eltype(candidates),Int}[]
     for k in eachindex(candidates)
@@ -402,15 +422,17 @@ end
 
 Convenience: compute an optimal design and execute it in one call.
 Equivalent to `ξ = design(...); run_batch(ξ, prob, prior, acquire)`.
+
+Pass `n` for a fixed number of measurements, or `budget` to let the
+number of measurements be determined by the cost structure.
 """
 function run_batch(
     prob::AbstractDesignProblem,
     candidates::AbstractVector{<:NamedTuple},
     prior,
     acquire;
-    n::Int=1,
     kwargs...,
 )
-    ξ = design(prob, candidates, prior; n=n, kwargs...)
+    ξ = design(prob, candidates, prior; kwargs...)
     run_batch(ξ, prob, prior, acquire)
 end

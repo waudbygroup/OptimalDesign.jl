@@ -24,14 +24,14 @@ Random.seed!(42)
 
 function model(θ, x)
     if x.i == 1
-        θ.A₁ * exp(-θ.R₂₁ * x.t)
+        θ.A₁ * exp(-θ.k₁ * x.t)
     else
-        θ.A₂ * exp(-θ.R₂₂ * x.t)
+        θ.A₂ * exp(-θ.k₂ * x.t)
     end
 end
 
 # Ground truth (unknown to the design algorithm)
-θ_true = ComponentArray(A₁=1.0, R₂₁=10.0, A₂=1.0, R₂₂=40.0)
+θ_true = ComponentArray(A₁=1.0, k₁=10.0, A₂=1.0, k₂=40.0)
 σ_true = 0.05
 budget = 200.0
 
@@ -43,12 +43,12 @@ acquire(x) = model(θ_true, x) + σ_true * randn()
 
 prob = DesignProblem(
     model,
-    parameters=(A₁=Normal(1, 0.1), R₂₁=LogUniform(1, 50),
-        A₂=Normal(1, 0.1), R₂₂=LogUniform(1, 50)),
-    transformation=select(:R₂₁, :R₂₂),
+    parameters=(A₁=Normal(1, 0.1), k₁=LogUniform(1, 50),
+        A₂=Normal(1, 0.1), k₂=LogUniform(1, 50)),
+    transformation=select(:k₁, :k₂),
     sigma=Returns(σ_true),
     cost=x -> x.t + 1,
-    switching_cost=(:i, 50.0),
+    switching_cost=(:i, 20.0),
 )
 display(prob)
 
@@ -58,21 +58,15 @@ candidates = candidate_grid(i=[1, 2], t=range(0.001, 0.5, length=200))
 # 3. Run adaptive experiment
 # ═══════════════════════════════════════════════
 
-println("Truth: A₁=$(θ_true.A₁), R₂₁=$(θ_true.R₂₁), A₂=$(θ_true.A₂), R₂₂=$(θ_true.R₂₂)")
-
-prior_adaptive = Particles(prob, 1000)
+prior = Particles(prob, 5000)
 
 result = run_adaptive(
-    prob, candidates, prior_adaptive, acquire;
+    prob, candidates, prior, acquire;
     budget=budget,
-    n_per_step=1,
-    headless=true,
-    record_posterior=true,
+    n_per_step=10,
 )
-
 display(result)
 
-posterior_adaptive = result.posterior
 log_adaptive = result.log
 n_adaptive = length(log_adaptive)
 if n_adaptive == 0
@@ -85,39 +79,31 @@ n_switches = count(i -> log_adaptive[i].x.i != log_adaptive[i-1].x.i, 2:n_adapti
 println("Allocation: $n_decay1 on decay 1, $n_decay2 on decay 2, $n_switches switches")
 
 # ═══════════════════════════════════════════════
-# 4. Batch design for comparison
+# 4. Batch design for comparison (same budget)
 # ═══════════════════════════════════════════════
 
-println("\n--- Batch design comparison (n=$n_adaptive) ---")
-prior_batch = Particles(prob, 1000)
-
-ξ_batch = design(prob, candidates, prior_batch;
-    n=n_adaptive, exchange_steps=200)
-
-result_batch = run_batch(ξ_batch, prob, prior_batch, acquire)
+result_batch = run_batch(prob, candidates, prior, acquire;
+    budget=budget)
 display(result_batch)
 
 # ═══════════════════════════════════════════════
 # 5. Comparison summary
 # ═══════════════════════════════════════════════
 
-μ_adaptive = mean(result.posterior)
-μ_batch = mean(result_batch.posterior)
-err_adaptive_1 = abs(μ_adaptive.R₂₁ - θ_true.R₂₁)
-err_adaptive_2 = abs(μ_adaptive.R₂₂ - θ_true.R₂₂)
-err_batch_1 = abs(μ_batch.R₂₁ - θ_true.R₂₁)
-err_batch_2 = abs(μ_batch.R₂₂ - θ_true.R₂₂)
+μ_adaptive = mean(result)
+μ_batch = mean(result_batch)
+err_adaptive_1 = abs(μ_adaptive.k₁ - θ_true.k₁)
+err_adaptive_2 = abs(μ_adaptive.k₂ - θ_true.k₂)
+err_batch_1 = abs(μ_batch.k₁ - θ_true.k₁)
+err_batch_2 = abs(μ_batch.k₂ - θ_true.k₂)
 
 println("\n=== Head-to-head comparison ===")
-println("  Adaptive |R₂₁ error|: $(round(err_adaptive_1; digits=2)),  |R₂₂ error|: $(round(err_adaptive_2; digits=2))")
-println("  Batch    |R₂₁ error|: $(round(err_batch_1; digits=2)),  |R₂₂ error|: $(round(err_batch_2; digits=2))")
-println("  (Both use $n_adaptive measurements, adaptive has switching cost penalty)")
+println("  Adaptive |k₁ error|: $(round(err_adaptive_1; digits=2)),  |k₂ error|: $(round(err_adaptive_2; digits=2))")
+println("  Batch    |k₁ error|: $(round(err_batch_1; digits=2)),  |k₂ error|: $(round(err_batch_2; digits=2))")
 
 # ═══════════════════════════════════════════════
 # 6. Plots
 # ═══════════════════════════════════════════════
-
-println("\nGenerating plots...")
 
 # --- Figure 1: Adaptive trajectory showing decay selection and switching ---
 
@@ -172,8 +158,8 @@ y_true_1 = [prob.predict(θ_true, x) for x in prediction_grid_1]
 y_true_2 = [prob.predict(θ_true, x) for x in prediction_grid_2]
 
 # Adaptive posterior bands
-pa1 = posterior_predictions(prob, posterior_adaptive, prediction_grid_1; n_samples=200)
-pa2 = posterior_predictions(prob, posterior_adaptive, prediction_grid_2; n_samples=200)
+pa1 = posterior_predictions(prob, result.posterior, prediction_grid_1; n_samples=200)
+pa2 = posterior_predictions(prob, result.posterior, prediction_grid_2; n_samples=200)
 ba1 = credible_band(pa1; level=0.9)
 ba2 = credible_band(pa2; level=0.9)
 
@@ -233,45 +219,17 @@ fig3 = plot_corner(result, result_batch;
 # --- Figure 4: Posterior evolution animation ---
 
 if has_posterior_history(log_adaptive)
-    println("Recording posterior evolution animation...")
     record_corner_animation(log_adaptive, "ex6_posterior_evolution.gif";
-        params=[:R₂₁, :R₂₂],
-        truth=θ_true,
-        framerate=5)
+        params=[:k₁, :k₂],
+        truth=θ_true, framerate=5)
 end
 
-# --- Figure 5: ESS and posterior convergence ---
+# --- Figure 5: Convergence ---
 
-println("\nRerunning adaptive experiment to track ESS evolution...")
-prior_ess = Particles(prob, 1000)
-ess_history = Float64[]
-r21_history = Float64[]
-r22_history = Float64[]
+fig5 = plot_convergence(result; truth=θ_true, params=[:k₁, :k₂])
 
-for entry in log_adaptive
-    update!(prior_ess, prob, entry.x, entry.y)
-    push!(ess_history, effective_sample_size(prior_ess))
-    μ = mean(prior_ess)
-    push!(r21_history, μ.R₂₁)
-    push!(r22_history, μ.R₂₂)
-end
+# --- Figure 6: Dashboard replay animation ---
 
-fig5 = Figure(size=(700, 500))
-
-ax5a = GLMakie.Axis(fig5[1, 1], ylabel="R₂ estimate",
-    title="Posterior Convergence")
-lines!(ax5a, 1:n_adaptive, r21_history, color=:blue, linewidth=2, label="R₂₁")
-lines!(ax5a, 1:n_adaptive, r22_history, color=:orange, linewidth=2, label="R₂₂")
-hlines!(ax5a, [θ_true.R₂₁], color=:blue, linestyle=:dash, linewidth=1)
-hlines!(ax5a, [θ_true.R₂₂], color=:orange, linestyle=:dash, linewidth=1)
-axislegend(ax5a)
-
-ax5b = GLMakie.Axis(fig5[2, 1], xlabel="Step", ylabel="ESS",
-    title="Effective Sample Size")
-lines!(ax5b, 1:n_adaptive, ess_history, color=:blue, linewidth=2)
-hlines!(ax5b, [100], color=:gray, linestyle=:dash, label="Warning threshold")
-axislegend(ax5b)
-
-fig5
+record_dashboard(result, prob; filename="ex6_dashboard.gif")
 
 println("\nDone. Figures created.")

@@ -96,7 +96,7 @@ cost = x -> x.t + 1        # longer measurements cost more
 cost = Returns(1.0)         # unit cost (default)
 ```
 
-Cost is used by `run_adaptive` to track budget consumption and by the design algorithm to account for variable measurement expense.
+Cost is used by `run_adaptive` to track budget consumption and by `design` for budget-aware allocation. When you pass `budget` instead of `n` to `design`, the number of measurements is determined automatically from the costs.
 
 ### `switching_cost` (keyword, default: `nothing`)
 

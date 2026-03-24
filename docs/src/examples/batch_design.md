@@ -1,18 +1,16 @@
 # Batch Design
 
-The simplest use of OptimalDesign.jl: compute an optimal batch design for an exponential decay, verify its optimality, compare it to uniform spacing, then acquire simulated data and examine the posterior.
+Compute an optimal batch design for an exponential decay, compare it to uniform spacing, then acquire simulated data and examine the posterior.
 
 ## The model
 
-An exponential decay with amplitude ``A`` and rate ``R_2``:
+An exponential decay with amplitude ``A`` and rate ``k``:
 
 ```math
-y = A \exp(-R_2 \, t) + \varepsilon, \qquad \varepsilon \sim \mathcal{N}(0, \sigma^2)
+y = A \exp(-k \, t) + \varepsilon, \qquad \varepsilon \sim \mathcal{N}(0, \sigma^2)
 ```
 
-We want to estimate ``R_2`` as precisely as possible (Ds-optimality), treating ``A`` as a nuisance parameter.
-
-## Setup
+We want to estimate ``k`` as precisely as possible, treating ``A`` as a nuisance parameter.
 
 ```@example batch
 using OptimalDesign
@@ -22,104 +20,106 @@ using Distributions
 using Random; Random.seed!(42) # hide
 
 function model(θ, x)
-    θ.A * exp(-θ.R₂ * x.t)
+    θ.A * exp(-θ.k * x.t)
 end
 
-# Ground truth (unknown to the design algorithm)
-θ_true = ComponentArray(A = 1.0, R₂ = 25.0)
+θ_true = ComponentArray(A = 1.0, k = 25.0)
 σ = 0.1
 acquire(x) = model(θ_true, x) + σ * randn()
-
-# Design problem: model, priors, what to estimate
-prob = DesignProblem(
-    model,
-    parameters = (A = LogUniform(0.1, 10), R₂ = Uniform(1, 50)),
-    transformation = select(:R₂),
-    sigma = Returns(σ),
-)
-
-candidates = candidate_grid(t = range(0.001, 0.5, length = 200))
-prior = Particles(prob, 1000)
 nothing # hide
 ```
 
-Key choices:
+## Defining the design problem
 
-- `select(:R₂)` tells the algorithm we care about ``R_2`` — this switches from D-optimal to Ds-optimal design
-- The prior distributions on ``A`` and ``R_2`` define the Bayesian averaging: the design will be good across the full range of plausible parameter values, not just at a single guess
-- `sigma` is constant here but can depend on ``\theta`` and ``x``
+To define a design problem, we need to specify the model, the prior uncertainty on each parameter, the noise level, and which parameters we want to estimate. The prior distributions should cover the plausible range of parameter values. The design is optimised across this full range (Bayesian averaging), not at a single guess.
 
-!!! tip "D-optimal vs Ds-optimal"
-    Omit the `transformation` keyword (or set `transformation = Identity()`) to get a full D-optimal design that treats all parameters equally. With `select(:R₂)`, the design focuses information on ``R_2`` and may sacrifice some precision on ``A``.
+```@example batch
+prob = DesignProblem(
+    model,
+    parameters = (A = LogUniform(0.1, 10), k = Uniform(1, 50)),
+    transformation = select(:k),
+    sigma = Returns(σ),
+)
+nothing # hide
+```
+
+- **`model`** — the prediction function `(θ, x) -> y`
+- **`parameters`** — prior distributions on each parameter, using any distribution from [Distributions.jl](https://juliastats.org/Distributions.jl/stable/) (e.g. `Uniform`, `Normal`, `LogUniform`, `LogNormal`, `Truncated(Normal(...), lo, hi)`)
+- **`sigma`** — noise standard deviation. Use `Returns(σ)` for constant noise, or a function `(θ, x) -> σ` if noise varies
+- **`transformation`** — `select(:k)` tells the algorithm we only care about estimating ``k``, switching from D-optimal to Ds-optimal design. Omit this to optimise for all parameters equally
+
+
+## Candidate grid
+
+The candidate grid defines the set of allowed measurements — all the design points where the algorithm is permitted to place observations. Each candidate is a `NamedTuple` (e.g. `(t = 0.1,)`). The `candidate_grid` helper generates the full outer product from named ranges:
+
+```@example batch
+candidates = candidate_grid(t = range(0.001, 0.5, length = 200))
+nothing # hide
+```
 
 ## Computing the design
 
+The `design` function takes the problem, candidates, and a particle-based prior, and returns an optimal allocation of `n` measurements. The prior (`Particles`) is a weighted sample from the parameter distributions — 1000 particles is typically enough.
+
 ```@example batch
-ξ = design(prob, candidates, prior; n = 20, exchange_steps = 200)
+prior = Particles(prob, 1000)
+ξ = design(prob, candidates, prior; n = 50)
 ```
 
-The Ds-optimal design concentrates measurements at two extremes (very short and very long times) with a cluster near ``1/R_2``. This is characteristic of designs for exponential models — short times pin down the amplitude, long times pin down the rate.
+The Ds-optimal design concentrates measurements at two extremes — short times pin down the amplitude, long times pin down the rate.
 
 ## Checking optimality
 
-The General Equivalence Theorem provides a certificate. If the maximum Gateaux derivative equals the transformed dimension ``q``, the design is optimal:
+The Gateaux derivative provides a visual check of optimality. It should touch the bound ``q`` (the number of parameters of interest) at the support points and lie below it everywhere else:
 
 ```@example batch
-opt = verify_optimality(prob, candidates, prior, ξ;
-    posterior_samples = 1000)
-opt
+plot_gateaux(prob, candidates, prior, ξ)
 ```
 
-Visualise the Gateaux derivative — it should touch the ``q`` bound at the support points and lie below it everywhere else:
+!!! info "Discrete vs continuous designs"
+    The optimality condition is defined for continuous designs (fractional weights over candidates). In practice, `design` rounds these weights into integer measurement counts, so the Gateaux derivative may slightly exceed the bound. This is normal — a small overshoot indicates the discrete approximation is close to optimal.
+
+## Comparing to uniform spacing
+
+How much better is the optimal design than uniform spacing? The `efficiency` function returns the ratio — a value below 1 means the first design is less efficient:
 
 ```@example batch
-plot_gateaux(opt)
-```
-
-## Efficiency comparison
-
-How much better is the optimal design than uniform spacing?
-
-```@example batch
-ξ_unif = uniform_allocation(candidates, 20)
-
-eff = efficiency(ξ_unif, ξ, prob, candidates, prior; posterior_samples = 1000)
+ξ_unif = uniform_allocation(candidates, 50)
+efficiency(ξ_unif, ξ, prob, candidates, prior)
 nothing # hide
 ```
 
-## Simulated acquisition
+## Running the experiment
 
-Run the experiment with both designs and compare:
+`run_batch` calls `acquire` at each design point and updates the posterior via likelihood tempering. The result carries both the original prior and the updated posterior:
 
 ```@example batch
-# Optimal design
 result_opt = run_batch(ξ, prob, prior, acquire)
-
-# Uniform design
 result_unif = run_batch(ξ_unif, prob, prior, acquire)
 nothing # hide
 ```
 
 ## Credible bands
 
+Credible bands show the model prediction uncertainty narrowing from prior to posterior. Passing multiple results overlays them for comparison:
+
 ```@example batch
 plot_credible_bands(prob, result_opt, result_unif;
-    labels = ["Optimal (20 obs)", "Uniform (20 obs)"], truth = θ_true)
+    labels = ["Optimal", "Uniform"], truth = θ_true)
 ```
 
 ## Corner plots
 
-Prior vs optimal posterior:
+A corner plot shows marginal and pairwise joint distributions. Passing a single result shows the prior contracting to a tight posterior:
 
 ```@example batch
 plot_corner(result_opt; truth = θ_true)
 ```
 
-Optimal vs uniform posterior:
+Passing two results compares their posteriors directly — the optimal design produces a tighter posterior on ``k``:
 
 ```@example batch
 plot_corner(result_unif, result_opt;
     labels = ["Uniform", "Optimal"], truth = θ_true)
 ```
-
-The corner plot shows the prior (broad, diffuse) contracting to a tight posterior around the true values. The optimal design produces a tighter posterior on ``R_2`` than the uniform design — exactly as the efficiency ratio modeled.

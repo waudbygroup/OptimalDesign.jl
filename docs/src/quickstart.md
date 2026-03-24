@@ -2,7 +2,13 @@
 
 A complete worked example: design an experiment for an exponential decay, acquire simulated data, estimate the parameters, and visualise the results.
 
-## The model and ground truth
+## The model
+
+An exponential decay with amplitude ``A`` and rate ``k``, observed with additive Gaussian noise:
+
+```math
+y = A \exp(-k \, t) + \varepsilon, \qquad \varepsilon \sim \mathcal{N}(0, \sigma^2)
+```
 
 ```@example quickstart
 using OptimalDesign
@@ -11,29 +17,34 @@ using ComponentArrays
 using Distributions
 using Random; Random.seed!(42) # hide
 
-# The physical model: exponential decay with amplitude A and rate R₂
 function model(θ, x)
-    θ.A * exp(-θ.R₂ * x.t)
+    θ.A * exp(-θ.k * x.t)
 end
 
 # Ground truth (unknown to the design algorithm)
-θ_true = ComponentArray(A = 1.0, R₂ = 25.0)
+θ_true = ComponentArray(A = 1.0, k = 25.0)
 σ = 0.1
+nothing # hide
+```
 
-# Simulated instrument: call this to "measure" at design point x
+## The acquisition function
+
+The `acquire` function is what gets called to make a measurement at a design point `x`. In a real experiment this would talk to your instrument; here we simulate by evaluating the model at the true parameters and adding noise:
+
+```@example quickstart
 acquire(x) = model(θ_true, x) + σ * randn()
 nothing # hide
 ```
 
 ## Setting up the design problem
 
-The `DesignProblem` tells the algorithm what it needs to know: the model, prior uncertainty on each parameter, and what we want to estimate. We want to estimate ``R_2`` as precisely as possible, treating ``A`` as a nuisance parameter.
+A `DesignProblem` bundles the model, prior uncertainty on each parameter, and what we want to estimate. Here we want to estimate ``k`` as precisely as possible, treating ``A`` as a nuisance parameter:
 
 ```@example quickstart
 prob = DesignProblem(
     model,
-    parameters = (A = LogUniform(0.1, 10), R₂ = Uniform(1, 50)),
-    transformation = select(:R₂),
+    parameters = (A = LogUniform(0.1, 10), k = Uniform(1, 50)),
+    transformation = select(:k),
     sigma = Returns(σ),
 )
 
@@ -45,6 +56,7 @@ nothing # hide
 ## Computing the optimal design
 
 ```@example quickstart
+# create a design with 20 measurements
 ξ = design(prob, candidates, prior; n = 20)
 ```
 
@@ -52,6 +64,19 @@ nothing # hide
 
 ```@example quickstart
 result = run_batch(ξ, prob, prior, acquire)
+```
+
+## Extracting estimates
+
+The result carries both the original prior and the updated posterior. Use `mean` and `std` to summarise:
+
+```@example quickstart
+using Statistics
+mean(result)
+```
+
+```@example quickstart
+std(result)
 ```
 
 ## Visualising results
@@ -68,15 +93,7 @@ A corner plot shows the joint posterior over the parameters:
 plot_corner(result; truth = θ_true)
 ```
 
-That's it. The key objects are:
-
-| Object | What it is |
-|--------|-----------|
-| `DesignProblem` | Your model, noise, prior, and what you want to learn |
-| `Particles` | A weighted particle set representing parameter uncertainty |
-| `ExperimentalDesign` | Which design points to measure and how many times |
-
-Next steps:
+## Next steps
 
 - [Workflows](@ref) — batch vs adaptive vs design-only
 - [Defining Problems](@ref) — all the options for `DesignProblem`
