@@ -63,7 +63,7 @@ prior = Particles(prob, 5000)
 result = run_adaptive(
     prob, candidates, prior, acquire;
     budget=budget,
-    n_per_step=10,
+    n_per_step=20,
 )
 display(result)
 

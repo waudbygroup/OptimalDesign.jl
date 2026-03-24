@@ -159,12 +159,16 @@ function _select_greedy(
         baseline = baseline_count == 0 ? -Inf : baseline_total / baseline_count
 
         # Score each candidate by E[Φ(M_running + M_k) - Φ(M_running)] / cost
+        # For switching problems, amortize the one-time switching cost over
+        # the remaining picks so the greedy scorer fairly evaluates a switch.
+        remaining_picks = n - step + 1
         scores = fill(-Inf, K)
         for k in 1:K
-            c = total_cost(prob, prev, candidates[k])
-            if c > remaining_budget
+            c_actual = total_cost(prob, prev, candidates[k])
+            if c_actual > remaining_budget
                 continue
             end
+            c = _amortized_cost(prob, prev, candidates[k], remaining_picks)
 
             total = 0.0
             count = 0
@@ -191,8 +195,9 @@ function _select_greedy(
         if all(==(-Inf), scores)
             @debug "All transform-based scores are -Inf; falling back to tr(FIM) scoring"
             for k in 1:K
-                c = total_cost(prob, prev, candidates[k])
-                c > remaining_budget && continue
+                c_actual = total_cost(prob, prev, candidates[k])
+                c_actual > remaining_budget && continue
+                c = _amortized_cost(prob, prev, candidates[k], remaining_picks)
                 total = 0.0
                 for ji in 1:np
                     @inbounds for col in 1:p, row in 1:p

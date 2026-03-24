@@ -61,13 +61,13 @@ function run_adaptive(
     while spent < budget
         step += 1
 
-        # Design next measurement(s)
-        # Pass prior_designs so greedy scorer evaluates marginal gain over
-        # accumulated information (essential when n_per_step < p for scalar obs)
+        # Design next measurement(s) using the greedy selector (not exchange).
+        # The greedy selector picks points sequentially, respecting accumulated
+        # information (prior_designs) and switching costs at each pick.
         ξ_step = design(prob, candidates, posterior;
             n=n_per_step,
             posterior_samples=posterior_samples, x_prev=x_prev,
-            budget=budget - spent, #exchange_algorithm=false,
+            budget=budget - spent, exchange_algorithm=false,
             prior_designs=design_points(log))
 
         isempty(ξ_step) && break
