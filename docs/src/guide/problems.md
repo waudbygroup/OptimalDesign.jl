@@ -121,6 +121,8 @@ constraint = (x, θ) -> x.dose ≤ θ.max_dose   # parameter-dependent constrain
 Design points are represented as `NamedTuple`s. Use `candidate_grid` to generate the full outer product from named ranges:
 
 ```jldoctest
+julia> using OptimalDesign
+
 julia> candidate_grid(t = [0.1, 0.2, 0.3])
 3-element Vector{@NamedTuple{t::Float64}}:
  (t = 0.1,)
