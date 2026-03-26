@@ -132,8 +132,8 @@ julia> candidate_grid(t = [0.1, 0.2, 0.3])
 julia> candidate_grid(channel = [1, 2], t = [0.1, 0.2])
 4-element Vector{@NamedTuple{channel::Int64, t::Float64}}:
  (channel = 1, t = 0.1)
- (channel = 1, t = 0.2)
  (channel = 2, t = 0.1)
+ (channel = 1, t = 0.2)
  (channel = 2, t = 0.2)
 ```
 
