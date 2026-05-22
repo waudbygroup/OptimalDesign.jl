@@ -33,10 +33,10 @@ Random.seed!(2024)
 model(θ, x) = θ.A * cos(θ.ω * x.t)
 
 θ_true = ComponentArray(A=1.0, ω=35)
-σ_true = 0.05
+σ_true = 5
 acquire(x) = model(θ_true, x) + σ_true * randn()
 
-n = 20
+n = 800
 
 println("Problem: y = A cos(ω t) + noise")
 println("Truth:   A = $(θ_true.A), ω = $(θ_true.ω)")
@@ -66,12 +66,6 @@ prob_eig = DesignProblem(
 
 candidates = candidate_grid(t=range(0.005, 1.0, length=200))
 
-# Identical prior particles for both, to make the comparison fair.
-Random.seed!(2024)
-prior_dopt = Particles(prob_dopt, 1000)
-Random.seed!(2024)
-prior_eig = Particles(prob_eig, 1000)
-
 # ═══════════════════════════════════════════════════
 # 3. Adaptive comparison — posterior updated between picks
 # ═══════════════════════════════════════════════════
@@ -80,15 +74,15 @@ println("\n--- Adaptive experiments (same budget = $n measurements) ---")
 
 # Fresh, identical priors for the adaptive runs.
 Random.seed!(2024)
-prior_dopt_a = Particles(prob_dopt, 5000)
+prior_dopt_a = Particles(prob_dopt, 10000, resampling=SystematicResampling(0.25))
 Random.seed!(2024)
-prior_eig_a = Particles(prob_eig, 5000)
+prior_eig_a = Particles(prob_eig, 10000, resampling=SystematicResampling(0.25))
 
 # Default cost = 1 per measurement, so budget = n gives n measurements.
 result_dopt_a = run_adaptive(prob_dopt, candidates, prior_dopt_a, acquire;
-    budget=Float64(n), n_per_step=1, headless=true, record_posterior=true)
+    budget=Float64(n), n_per_step=1, headless=false, record_posterior=true)
 result_eig_a = run_adaptive(prob_eig, candidates, prior_eig_a, acquire;
-    budget=Float64(n), n_per_step=1, headless=true, record_posterior=true)
+    budget=Float64(n), n_per_step=1, headless=false, record_posterior=true)
 
 μ_dopt_a = mean(result_dopt_a.posterior)
 μ_eig_a = mean(result_eig_a.posterior)

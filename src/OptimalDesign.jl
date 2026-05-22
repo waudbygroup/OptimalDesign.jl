@@ -11,6 +11,7 @@ using Statistics: mean, median, quantile, std, var
 
 import CairoMakie
 import GLMakie
+import GaussianMixtures
 
 # Problem specification
 export DesignProblem, select,

@@ -1,5 +1,6 @@
 include("liu_west.jl")
 include("systematic.jl")
+include("gmm.jl")
 
 """
     Particles(prob::AbstractDesignProblem, n::Int; resampling=LiuWestResampling())

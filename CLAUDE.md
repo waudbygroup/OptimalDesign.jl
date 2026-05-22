@@ -19,6 +19,8 @@ ENV["JULIA_DEBUG"] = OptimalDesign
 
 ## Code organisation
 
-- **All type definitions go in `types.jl`** — structs, abstract types, type aliases.
-  Other files contain methods, constructors, and logic only.
-  **This is a hard rule.** Never define a struct or abstract type outside `types.jl`.
+- **Core type definitions go in `types.jl`** — abstract types, domain structs (problem,
+  design, results, particles), and type aliases. Abstract types must always be in `types.jl`.
+- **Strategy/plugin structs** (e.g. resampling strategies, design criteria) live in their
+  own implementation files alongside their methods. This is the established pattern for
+  `LiuWestResampling`, `SystematicResampling`, `GMMResampling`, etc.
