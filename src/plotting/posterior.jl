@@ -123,13 +123,16 @@ function plot_corner(
                     yv = all_vals[di][i]
                     w = all_w[di]
 
-                    # Resample for visual clarity (weighted scatter)
-                    n_draw = min(500, length(xv))
-                    idx = _weighted_sample_indices(w, n_draw)
+                    # Uniform thinning for performance; weight encoded via marker size
+                    step = max(1, length(xv) ÷ min(2000, length(xv)))
+                    idx = 1:step:length(xv)
+                    lw_sel = log.(w[idx])
+                    ms = clamp.(10.0 .- 5.0 .* (maximum(lw_sel) .- lw_sel), 0.5, 10.0)
+                    @info minimum(ms) maximum(ms)
 
                     base_color = cs[di] isa Tuple ? cs[di][1] : cs[di]
                     CairoMakie.scatter!(ax, xv[idx], yv[idx];
-                        color=(base_color, 0.2), markersize=5,
+                        color=(base_color, 0.3), markersize=ms,
                         label=n_dist > 1 ? ls[di] : nothing)
                 end
 
@@ -233,11 +236,13 @@ function _draw_corner_data!(fig, axes_grid, datasets, names, truth_vals;
                 # 2D scatter
                 for di in 1:n_dist
                     vals, w = datasets[di]
-                    n_draw = min(500, length(vals[j]))
-                    idx = _weighted_sample_indices(w, n_draw)
+                    step = max(1, length(vals[j]) ÷ min(2000, length(vals[j])))
+                    idx = 1:step:length(vals[j])
+                    lw_sel = log.(w[idx])
+                    ms = clamp.(5.0 .- 2.0 .* (maximum(lw_sel) .- lw_sel), 0.5, 5.0)
                     base_color = cs[di] isa Tuple ? cs[di][1] : cs[di]
                     CairoMakie.scatter!(ax, vals[j][idx], vals[i][idx];
-                        color=(base_color, 0.2), markersize=5,
+                        color=(base_color, 0.3), markersize=ms,
                         label=n_dist > 1 ? ls[di] : nothing)
                 end
                 if truth_vals !== nothing
