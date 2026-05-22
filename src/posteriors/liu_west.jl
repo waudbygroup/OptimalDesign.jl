@@ -131,3 +131,101 @@ function resample!(posterior::Particles{T, LiuWestResampling};
     @debug "Resampled with Liu-West kernel (a=$a, h=$(round(h; digits=4)))"
     posterior
 end
+
+"""Compute total log-likelihood of all data for each particle."""
+function _compute_total_ll(posterior::Particles, prob::AbstractDesignProblem,
+        data::AbstractVector{<:NamedTuple})
+    n = length(posterior.particles)
+    total_ll = Vector{Float64}(undef, n)
+    for i in 1:n
+        θ = posterior.particles[i]
+        ll = 0.0
+        for d in data
+            ll += loglikelihood(prob, θ, d.x, d.y)
+        end
+        total_ll[i] = ll
+    end
+    total_ll
+end
+
+"""Compute ESS that would result from adding Δβ * total_ll to log_weights, without modifying them."""
+function _trial_ess(log_weights::Vector{Float64}, total_ll::Vector{Float64}, Δβ::Float64)
+    n = length(log_weights)
+    trial = Vector{Float64}(undef, n)
+    for i in 1:n
+        trial[i] = log_weights[i] + Δβ * total_ll[i]
+    end
+    lse = logsumexp(trial)
+    trial .-= lse
+    exp(-logsumexp(2 .* trial))
+end
+
+"""
+Bisect for the largest Δβ ∈ (0, remaining] such that trial ESS ≥ target.
+If even Δβ = remaining keeps ESS above target, return remaining (finish in one step).
+"""
+function _bisect_Δβ(log_weights::Vector{Float64}, total_ll::Vector{Float64},
+        remaining::Float64, target_ess::Float64;
+        max_iter::Int=30, tol::Float64=1e-6)
+    trial_ess = _trial_ess(log_weights, total_ll, remaining)
+    trial_ess >= target_ess && return remaining
+
+    lo = 0.0
+    hi = remaining
+    for _ in 1:max_iter
+        mid = (lo + hi) / 2
+        (hi - lo) < tol && break
+        if _trial_ess(log_weights, total_ll, mid) >= target_ess
+            lo = mid
+        else
+            hi = mid
+        end
+    end
+    max(lo, remaining * 1e-6)
+end
+
+"""
+    update!(posterior, prob, data, ::LiuWestResampling)
+
+Batch update using adaptive likelihood tempering (SMC sampler).
+
+Computes each particle's total log-likelihood across all data, then raises
+the tempering exponent β from 0 → 1 in adaptive steps. At each step, the
+step size Δβ is chosen by bisection so that the ESS stays just above
+`strategy.ess_threshold × n`, then particles are resampled with Liu-West jitter.
+
+Each element of `data` must have fields `x` (design point) and `y` (observation).
+"""
+function update!(posterior::Particles{T, LiuWestResampling}, prob::AbstractDesignProblem,
+        data::AbstractVector{<:NamedTuple}, strategy::LiuWestResampling) where {T}
+    n = length(posterior.particles)
+    target_ess = strategy.ess_threshold * n
+
+    total_ll = _compute_total_ll(posterior, prob, data)
+
+    β = 0.0
+    step = 0
+    while β < 1.0
+        step += 1
+        remaining = 1.0 - β
+
+        Δβ = _bisect_Δβ(posterior.log_weights, total_ll, remaining, target_ess)
+
+        for i in 1:n
+            posterior.log_weights[i] += Δβ * total_ll[i]
+        end
+        lse = logsumexp(posterior.log_weights)
+        posterior.log_weights .-= lse
+        β += Δβ
+
+        ess = effective_sample_size(posterior)
+        @debug "Tempering step $step: Δβ=$(round(Δβ; digits=4)), β=$(round(β; digits=4)), ESS=$(round(ess; digits=1))"
+
+        if ess < target_ess
+            resample!(posterior; prob=prob)
+            total_ll = _compute_total_ll(posterior, prob, data)
+        end
+    end
+    @debug "Tempering complete in $step steps"
+    posterior
+end
