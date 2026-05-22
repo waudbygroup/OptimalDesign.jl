@@ -126,11 +126,23 @@ Supertype for posterior representations. Currently the only concrete subtype is
 """
 abstract type AbstractPosterior end
 
+# --- Resampling strategies ---
+
+"""
+    ResamplingStrategy
+
+Abstract supertype for particle resampling/jitter strategies.
+Concrete subtypes are stored as a type parameter and field on [`Particles`](@ref),
+allowing dispatch in [`resample!`](@ref) without touching any other methods.
+"""
+abstract type ResamplingStrategy end
+
 # --- Particles ---
 
-struct Particles{T} <: AbstractPosterior
+struct Particles{T, RS<:ResamplingStrategy} <: AbstractPosterior
     particles::Vector{T}
     log_weights::Vector{Float64}
+    resampling::RS
 end
 
 # --- ExperimentLog ---

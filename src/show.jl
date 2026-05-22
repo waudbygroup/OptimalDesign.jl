@@ -22,6 +22,7 @@ function Base.show(io::IO, ::MIME"text/plain", p::Particles)
     μ = mean(p)
     σ = std(p)
     println(io, "Particles: $n samples, ESS=$ess")
+    println(io, "  Strategy: $(typeof(p.resampling))")
     println(io, "  Mean: $(_format_params(μ))")
     print(io, "  Std:  $(_format_params(σ))")
 end

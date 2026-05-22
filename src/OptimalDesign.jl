@@ -17,7 +17,7 @@ export DesignProblem, select,
        DCriterion, ACriterion, ECriterion, EIGCriterion
 
 # Posterior
-export AbstractPosterior, Particles
+export AbstractPosterior, Particles, ResamplingStrategy
 
 # Design
 export ExperimentalDesign, design, run_batch, run_adaptive,
@@ -34,7 +34,7 @@ export ExperimentLog, has_posterior_history,
 export effective_sample_size,
        posterior_predictions, credible_band,
        efficiency, verify_optimality, gateaux_derivative,
-       information, observation_diagnostics, update!,
+       information, observation_diagnostics, update!, resample!,
        draw, score_candidates
 
 # Plotting

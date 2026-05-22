@@ -188,6 +188,41 @@ const od_loglikelihood = OptimalDesign.loglikelihood
         # Sample (qualified to avoid conflict with Distributions.sample)
         s = od_sample(post, 10)
         @test length(s) == 10
+
+        # Default strategy is LiuWestResampling
+        @test post.resampling isa LiuWestResampling
+        @test post.resampling.a ≈ 0.98
+        @test post.resampling.ess_threshold ≈ 0.5
+
+        # Custom LiuWestResampling parameters
+        post_lw = Particles(prob, 200; resampling=LiuWestResampling(a=0.9, ess_threshold=0.3))
+        @test post_lw.resampling.a ≈ 0.9
+        @test post_lw.resampling.ess_threshold ≈ 0.3
+
+        # SystematicResampling: resample! resets weights to uniform, particles are a subset
+        post_sr = Particles(prob, 200; resampling=SystematicResampling())
+        @test post_sr.resampling isa SystematicResampling
+        # Skew weights so resampling does something
+        post_sr.log_weights .= randn(200)
+        post_sr.log_weights .-= maximum(post_sr.log_weights)
+        resample!(post_sr)
+        @test all(post_sr.log_weights .≈ -log(200))
+
+        # update! reads ess_threshold from the strategy (ess_threshold=0.99 forces resampling)
+        post_eager = Particles(prob, 200; resampling=LiuWestResampling(ess_threshold=0.99))
+        θ_true = ComponentArray(A=1.0, R₂=10.0)
+        x_test = (t=0.1,)
+        y_test = prob.predict(θ_true, x_test) + 0.05 * randn()
+        ess_before = effective_sample_size(post_eager)
+        update!(post_eager, prob, x_test, y_test)
+        ess_after = effective_sample_size(post_eager)
+        @test ess_after > 0  # basic sanity
+
+        # show displays strategy type in text/plain
+        buf = IOBuffer()
+        show(buf, MIME"text/plain"(), post)
+        str = String(take!(buf))
+        @test occursin("LiuWestResampling", str)
     end
 
     @testset "loglikelihood" begin
