@@ -23,6 +23,13 @@ function exchange(
     prior_designs::AbstractVector=NamedTuple[],
     design_scale::Real=1.0,
 )
+    if prob.criterion isa EIGCriterion
+        throw(ArgumentError(
+            "Exchange algorithm is not supported for EIGCriterion — EIG is " *
+            "non-convex in design weights and admits no Gateaux-derivative " *
+            "certificate. Use greedy selection (`exchange_algorithm=false`)."))
+    end
+
     K = length(candidates)
     q = _transformed_dimension(prob)
 

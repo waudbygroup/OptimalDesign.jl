@@ -39,6 +39,30 @@ minimises the worst-case variance direction.
 """
 struct ECriterion <: DesignCriterion end
 
+"""
+    EIGCriterion(; outer_samples=50, inner_samples=50)
+
+Expected Information Gain criterion. Scores candidates by the mutual information
+between the parameters (or `τ(θ)` under `DeltaMethod`) and the next observation,
+estimated by nested Monte Carlo over the current posterior.
+
+EIG is the fully Bayesian alternative to the FIM-based criteria (`DCriterion`,
+`ACriterion`, `ECriterion`). It avoids the local-Gaussian approximation but
+costs more per candidate and is non-convex in design weights — only the greedy
+adaptive (and approximate top-k) paths are supported. Batch weight optimisation
+via the exchange algorithm and the General Equivalence Theorem certificate are
+not available under EIG.
+
+`outer_samples` and `inner_samples` control the nested Monte Carlo estimator;
+both default to 50. Variance scales as `O(1/outer_samples + 1/inner_samples)`.
+"""
+struct EIGCriterion <: DesignCriterion
+    outer_samples::Int
+    inner_samples::Int
+end
+EIGCriterion(; outer_samples::Int=50, inner_samples::Int=50) =
+    EIGCriterion(outer_samples, inner_samples)
+
 # --- DesignProblem ---
 
 abstract type AbstractDesignProblem end

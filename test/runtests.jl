@@ -765,4 +765,195 @@ const od_loglikelihood = OptimalDesign.loglikelihood
         @test all(band.median .<= band.upper)
     end
 
+    # =============================================
+    # EIG criterion
+    # =============================================
+
+    @testset "EIG criterion" begin
+        @testset "EIGCriterion construction" begin
+            crit = EIGCriterion()
+            @test crit.outer_samples == 50
+            @test crit.inner_samples == 50
+            crit2 = EIGCriterion(outer_samples=20, inner_samples=80)
+            @test crit2.outer_samples == 20
+            @test crit2.inner_samples == 80
+        end
+
+        @testset "simulate_observation" begin
+            Random.seed!(123)
+            # Scalar predict, scalar σ
+            prob = DesignProblem(
+                (θ, x) -> θ.A * x.t,
+                parameters=(A=Normal(0, 1),),
+                sigma=(θ, x) -> 0.1,
+            )
+            θ = ComponentArray(A=2.0)
+            x = (t=1.0,)
+            ys = [OptimalDesign.simulate_observation(prob, θ, x) for _ in 1:2000]
+            @test mean(ys) ≈ 2.0 atol = 0.05
+            @test std(ys) ≈ 0.1 atol = 0.02
+
+            # Vector predict, vector σ
+            prob_v = DesignProblem(
+                (θ, x) -> [θ.A * x.t, θ.A * x.t^2],
+                parameters=(A=Normal(0, 1),),
+                sigma=(θ, x) -> [0.1, 0.2],
+            )
+            ys_v = [OptimalDesign.simulate_observation(prob_v, θ, x) for _ in 1:2000]
+            ymat = reduce(hcat, ys_v)
+            @test mean(ymat[1, :]) ≈ 2.0 atol = 0.05
+            @test mean(ymat[2, :]) ≈ 2.0 atol = 0.05
+            @test std(ymat[1, :]) ≈ 0.1 atol = 0.02
+            @test std(ymat[2, :]) ≈ 0.2 atol = 0.04
+        end
+
+        @testset "NMC EIG ≈ closed-form (linear Gaussian)" begin
+            # y = a · θ + σ ε, θ ~ N(0, σ_p²)
+            # EIG = 0.5 log(1 + a² σ_p² / σ²)
+            Random.seed!(7)
+            σ = 0.5
+            σ_p = 1.0
+            prob = DesignProblem(
+                (θ, x) -> x.a * θ.θ,
+                parameters=(θ=Normal(0.0, σ_p),),
+                sigma=(θ, x) -> σ,
+                criterion=EIGCriterion(outer_samples=500, inner_samples=500),
+            )
+            prior = Particles(prob, 2000)
+
+            for a in (0.5, 1.0, 2.0, 3.0)
+                target = 0.5 * log(1 + a^2 * σ_p^2 / σ^2)
+                est = OptimalDesign.eig_score(prob, prior.particles, (a=a,);
+                    outer_samples=500, inner_samples=500)
+                @test est ≈ target atol = 0.15
+            end
+        end
+
+        @testset "EIG ≈ 0 for uninformative candidate" begin
+            # predict(θ, x) = θ.A * exp(-θ.R₂ * x.t)
+            # At t=0, predict = θ.A — only A is touched; if A is tightly constrained,
+            # very little can be learned. EIG should be small (not zero, since A still
+            # has some uncertainty), but much smaller than at an informative t.
+            Random.seed!(11)
+            prob = DesignProblem(
+                (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
+                parameters=(A=Normal(1.0, 0.01), R₂=LogUniform(1.0, 50.0)),
+                sigma=(θ, x) -> 0.05,
+                criterion=EIGCriterion(outer_samples=200, inner_samples=200),
+            )
+            prior = Particles(prob, 500)
+            eig_t0 = OptimalDesign.eig_score(prob, prior.particles, (t=0.0,);
+                outer_samples=200, inner_samples=200)
+            eig_t_mid = OptimalDesign.eig_score(prob, prior.particles, (t=0.05,);
+                outer_samples=200, inner_samples=200)
+            @test eig_t_mid > eig_t0 + 0.5
+            @test abs(eig_t0) < 0.3
+        end
+
+        @testset "Greedy EIG selects an informative time (Example 1)" begin
+            Random.seed!(3)
+            prob = DesignProblem(
+                (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
+                parameters=(A=Normal(1, 0.1), R₂=LogUniform(1.0, 50.0)),
+                sigma=(θ, x) -> 0.05,
+                criterion=EIGCriterion(outer_samples=80, inner_samples=80),
+                cost=x -> x.t + 0.1,
+            )
+            prior = Particles(prob, 400)
+            candidates = [(t=t,) for t in range(0.005, 0.5, length=40)]
+
+            ξ = design(prob, candidates, prior; n=1)
+            picked_t = first(ξ)[1].t
+            @test 0.01 ≤ picked_t ≤ 0.3
+        end
+
+        @testset "Marginal EIG with select() differs from total EIG" begin
+            Random.seed!(5)
+            base_kwargs = (
+                predict=(θ, x) -> θ.A * exp(-θ.R₂ * x.t),
+                parameters=(A=Normal(1.0, 0.5), R₂=LogUniform(1.0, 50.0)),
+                sigma=(θ, x) -> 0.05,
+            )
+            prob_total = DesignProblem(base_kwargs.predict;
+                parameters=base_kwargs.parameters,
+                sigma=base_kwargs.sigma,
+                criterion=EIGCriterion(outer_samples=200, inner_samples=200))
+            prob_marg = DesignProblem(base_kwargs.predict;
+                parameters=base_kwargs.parameters,
+                sigma=base_kwargs.sigma,
+                transformation=select(:R₂),
+                criterion=EIGCriterion(outer_samples=200, inner_samples=200))
+            prior_t = Particles(prob_total, 600)
+            prior_m = Particles(prob_marg, 600)
+
+            x = (t=0.05,)
+            total_eig = OptimalDesign.eig_score(prob_total, prior_t.particles, x;
+                outer_samples=200, inner_samples=200)
+            marg_eig = OptimalDesign.eig_score(prob_marg, prior_m.particles, x;
+                outer_samples=200, inner_samples=200)
+
+            # With A loose, total ≥ marginal (some information goes to A, not R₂)
+            @test total_eig > marg_eig
+            @test marg_eig > 0
+        end
+
+        @testset "_splice_selected" begin
+            θ_m = ComponentArray(A=1.0, R₂=10.0, B=3.0)
+            ν_n = ComponentArray(A=5.0, R₂=99.0, B=7.0)
+            out = OptimalDesign._splice_selected(θ_m, ν_n, (:R₂,))
+            # selected (R₂) comes from inner ν_n; nuisance (A, B) from outer θ_m
+            @test out.R₂ == 99.0
+            @test out.A == 1.0
+            @test out.B == 3.0
+        end
+
+        @testset "run_adaptive smoke with EIG" begin
+            Random.seed!(17)
+            θ_true = ComponentArray(A=1.0, R₂=15.0)
+            acquire = let θ = θ_true, σ = 0.05
+                x -> θ.A * exp(-θ.R₂ * x.t) + σ * randn()
+            end
+            prob = DesignProblem(
+                (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
+                parameters=(A=Normal(1, 0.1), R₂=LogUniform(1.0, 50.0)),
+                sigma=(θ, x) -> 0.05,
+                criterion=EIGCriterion(outer_samples=40, inner_samples=40),
+                cost=x -> x.t + 0.1,
+            )
+            candidates = [(t=t,) for t in range(0.005, 0.5, length=30)]
+            prior = Particles(prob, 300)
+            result = run_adaptive(prob, candidates, prior, acquire;
+                budget=3.0, n_per_step=1, headless=true, record_posterior=false)
+            μ = mean(result.posterior)
+            @test abs(μ.R₂ - 15.0) < 10.0
+        end
+
+        @testset "EIG error paths" begin
+            # Smooth DeltaMethod with EIG: rejected at construction
+            @test_throws ArgumentError DesignProblem(
+                (θ, x) -> θ.A + θ.B * x.t,
+                parameters=(A=Normal(0, 1), B=Normal(0, 1)),
+                transformation=OptimalDesign.DeltaMethod(θ -> ComponentArray(s=θ.A + θ.B)),
+                criterion=EIGCriterion(),
+            )
+
+            prob = DesignProblem(
+                (θ, x) -> θ.A * exp(-θ.R₂ * x.t),
+                parameters=(A=Normal(1, 0.1), R₂=LogUniform(1.0, 50.0)),
+                sigma=(θ, x) -> 0.05,
+                criterion=EIGCriterion(outer_samples=20, inner_samples=20),
+            )
+            prior = Particles(prob, 100)
+            candidates = [(t=t,) for t in range(0.005, 0.5, length=10)]
+
+            # Exchange algorithm with EIG: rejected
+            @test_throws ArgumentError design(prob, candidates, prior; n=5,
+                exchange_algorithm=true)
+
+            # Gateaux derivative with EIG: rejected
+            ξ = design(prob, candidates, prior; n=1)
+            @test_throws ArgumentError gateaux_derivative(prob, candidates, prior, ξ)
+        end
+    end
+
 end

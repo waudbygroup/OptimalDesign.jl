@@ -14,7 +14,7 @@ import GLMakie
 
 # Problem specification
 export DesignProblem, select,
-       DCriterion, ACriterion, ECriterion
+       DCriterion, ACriterion, ECriterion, EIGCriterion
 
 # Posterior
 export AbstractPosterior, Particles
@@ -50,6 +50,7 @@ include("sampling.jl")
 include("information.jl")
 include("utility.jl")
 include("posteriors/particle.jl")
+include("eig.jl")
 include("show.jl")
 include("candidates.jl")
 include("predictions.jl")

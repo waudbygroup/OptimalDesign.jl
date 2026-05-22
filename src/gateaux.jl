@@ -31,6 +31,12 @@ function gateaux_derivative(
     costs::Union{Nothing,AbstractVector{<:Real}}=nothing,
     M_prior=nothing,
 )
+    if prob.criterion isa EIGCriterion
+        throw(ArgumentError(
+            "Gateaux derivative / optimality verification is not defined for " *
+            "EIGCriterion — EIG is non-convex in design weights. This check is " *
+            "only meaningful for FIM-based criteria."))
+    end
     criterion = prob.criterion
     K = length(candidates)
     n_particles = length(particles)

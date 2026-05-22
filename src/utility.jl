@@ -27,9 +27,16 @@ end
 
 Compute the expected utility of design point x by Monte Carlo over posterior particles.
 Uses the criterion from `prob.criterion`.
+
+For FIM-based criteria (`DCriterion`, `ACriterion`, `ECriterion`) this averages
+`Φ(M_τ(ξ, θ))` over particles. For `EIGCriterion`, it returns the nested-MC EIG
+estimate at `x`.
 """
 function expected_utility(prob::AbstractDesignProblem, particles::AbstractVector, x; posterior_samples::Int=50)
-    criterion = prob.criterion
+    _expected_utility(prob.criterion, prob, particles, x; posterior_samples=posterior_samples)
+end
+
+function _expected_utility(criterion::DesignCriterion, prob, particles, x; posterior_samples::Int)
     n = length(particles)
     bs = min(posterior_samples, n)
     idx = randperm(n)[1:bs]
@@ -46,6 +53,12 @@ function expected_utility(prob::AbstractDesignProblem, particles::AbstractVector
         end
     end
     count == 0 ? -Inf : total / count
+end
+
+function _expected_utility(criterion::EIGCriterion, prob, particles, x; posterior_samples::Int)
+    eig_score(prob, particles, x;
+              outer_samples=criterion.outer_samples,
+              inner_samples=criterion.inner_samples)
 end
 
 """

@@ -46,6 +46,17 @@ function design(
 
     use_exchange = exchange_algorithm !== nothing ? exchange_algorithm : (n > 5)
 
+    if problem.criterion isa EIGCriterion
+        if exchange_algorithm === true
+            throw(ArgumentError(
+                "Exchange algorithm (batch weight optimisation) is not supported " *
+                "for EIGCriterion — EIG is non-convex in design weights. Use " *
+                "`exchange_algorithm=false` (greedy selection) or switch to a " *
+                "FIM-based criterion for batch design."))
+        end
+        use_exchange = false
+    end
+
     all_particles = _get_particles(posterior)
 
     if posterior_samples ≤ 0
@@ -102,6 +113,11 @@ function _select_greedy(
     criterion, posterior_samples, budget, x_prev,
     prior_designs=NamedTuple[],
 )
+    if criterion isa EIGCriterion
+        return _select_greedy_eig(prob, candidates, particles, n;
+            budget=budget, x_prev=x_prev)
+    end
+
     selected = NamedTuple[]
     remaining_budget = budget
     prev = x_prev
@@ -226,6 +242,49 @@ function _select_greedy(
 end
 
 """
+Greedy selection under `EIGCriterion`: score every affordable candidate by
+nested-Monte-Carlo EIG against the supplied particles, divide by cost, pick the
+best, deduct the cost, repeat. For `n > 1` this is the independent-EIG
+approximation — picks are not posterior-conditioned on earlier picks within the
+batch. Adequate for sparse top-k, sub-optimal when picks overlap.
+"""
+function _select_greedy_eig(
+    prob, candidates, particles, n;
+    budget, x_prev,
+)
+    crit = prob.criterion::EIGCriterion
+    selected = NamedTuple[]
+    remaining_budget = budget
+    prev = x_prev
+    K = length(candidates)
+
+    for step in 1:n
+        scores = fill(-Inf, K)
+        for k in 1:K
+            c = total_cost(prob, prev, candidates[k])
+            c > remaining_budget && continue
+            s = eig_score(prob, particles, candidates[k];
+                outer_samples=crit.outer_samples,
+                inner_samples=crit.inner_samples)
+            scores[k] = isfinite(s) ? s / max(c, eps()) : -Inf
+        end
+
+        best_idx = argmax(scores)
+        best_score = scores[best_idx]
+        best_score == -Inf && break
+
+        x = candidates[best_idx]
+        push!(selected, x)
+        remaining_budget -= total_cost(prob, prev, x)
+        prev = x
+
+        @debug "Greedy EIG step $step: x=$(x), score=$(round(best_score; digits=4)), budget_left=$(round(remaining_budget; digits=2))"
+    end
+
+    _compress(selected)
+end
+
+"""
 Batch selection via exchange algorithm with cost awareness.
 
 When per-measurement costs vary, the FIM is weighted by `wₖ/cₖ` so the
@@ -238,6 +297,13 @@ function _select_batch(
     budget=Inf, x_prev=nothing,
     prior_designs=NamedTuple[],
 )
+    if prob.criterion isa EIGCriterion
+        throw(ArgumentError(
+            "Exchange algorithm (batch weight optimisation) is not supported " *
+            "for EIGCriterion — EIG is non-convex in design weights. Use " *
+            "`exchange_algorithm=false` (greedy selection) or switch to a " *
+            "FIM-based criterion for batch design."))
+    end
     # Per-measurement costs (1-arg cost function)
     costs_vec = [prob.cost(x) for x in candidates]
     has_uniform_cost = all(c -> c ≈ costs_vec[1], costs_vec)

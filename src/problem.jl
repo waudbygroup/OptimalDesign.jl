@@ -44,6 +44,15 @@ function DesignProblem(
     switching_cost=nothing,
     constraint=(x, θ) -> true,
 )
+    if criterion isa EIGCriterion && transformation isa DeltaMethod && transformation.selected === nothing
+        throw(ArgumentError(
+            "EIGCriterion supports `Identity` (total EIG) or a coordinate-selection " *
+            "DeltaMethod built via `select(:name, ...)` (marginal EIG). Smooth " *
+            "DeltaMethod transformations are not supported in v1; either use " *
+            "`select(...)` for the parameters of interest, or keep `DCriterion()` " *
+            "for Ds-optimality on a general τ."))
+    end
+
     if switching_cost === nothing
         DesignProblem(predict, jacobian, sigma, parameters, transformation, criterion, cost, constraint)
     else
