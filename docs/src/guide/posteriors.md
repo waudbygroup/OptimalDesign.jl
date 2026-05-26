@@ -65,6 +65,46 @@ band = credible_band(preds; level = 0.9)
 
 These can be plotted directly or passed to `plot_credible_bands` (see [Plotting](@ref)).
 
+## Resampling strategies
+
+Particle filters lose diversity over time as a few particles accumulate most of the weight. OptimalDesign.jl triggers a **resample** step whenever the effective sample size (ESS) drops below a configurable fraction of the particle count. Three strategies are available:
+
+### `LiuWestResampling` (default)
+
+Systematic resampling followed by a small kernel jitter in unconstrained parameter space, preserving bounded priors:
+
+```julia
+prior = Particles(prob, 2000)  # LiuWestResampling(a=0.98, ess_threshold=0.5) by default
+prior = Particles(prob, 2000; resampling = LiuWestResampling(a = 0.95, ess_threshold = 0.4))
+```
+
+The shrinkage coefficient `a` (0 < a < 1) controls the jitter magnitude: ``h^2 = 1 - a^2``. Larger `a` → smaller perturbation → better moment preservation but less diversity recovery.
+
+### `SystematicResampling`
+
+Plain systematic resampling with no jitter — the fastest option:
+
+```julia
+prior = Particles(prob, 2000; resampling = SystematicResampling(ess_threshold = 0.5))
+```
+
+### `GMMResampling`
+
+Fits a Gaussian Mixture Model (BIC-guided number of components) to the current particle cloud and draws a fresh sample from it. Handles multi-modal posteriors that the other strategies collapse:
+
+```julia
+prior = Particles(prob, 2000; resampling = GMMResampling(ess_threshold = 0.8, k_max = 8))
+```
+
+Optional diagnostic figures are written per resample event when `log_dir` is set:
+
+```julia
+prior = Particles(prob, 2000;
+    resampling = GMMResampling(k_max = 6, log_dir = "gmm_diagnostics/"))
+```
+
+See the [Resampling Strategies](@ref) example page for a worked comparison on a challenging multi-modal problem.
+
 ## How likelihood tempering works
 
 When many observations arrive at once (as in `run_batch`), a naive likelihood update would concentrate all weight on a handful of particles, effectively collapsing the posterior. OptimalDesign avoids this with **adaptive tempering**:

@@ -16,10 +16,10 @@ OptimalDesign.jl helps you decide *where* and *how many times* to measure in ord
 - **Batch design** — compute an optimal allocation of measurements before acquiring any data
 - **Adaptive design** — sequentially choose the next measurement based on what you've learned so far
 - **Bayesian averaging** — designs are optimised across prior distributions (via [Distributions.jl](https://github.com/JuliaStats/Distributions.jl))
-- **Multiple criteria** — D-optimal (overall precision), Ds-optimal (subset of parameters), A-optimal, E-optimal
-- **Particle posterior** — inference with likelihood tempering and Liu-West resampling
-- **Optimality verification** — via the Gateaux derivative and the General Equivalence Theorem
-- **Built-in plotting** — credible bands, corner plots, design allocation, live dashboard
+- **Multiple criteria** — D-optimal, Ds-optimal (parameter subsets), A-optimal, E-optimal, and EIG (Expected Information Gain) for broad or multi-modal priors
+- **Particle posterior** — inference with likelihood tempering and pluggable resampling strategies (Liu-West, systematic, Gaussian mixture model)
+- **Optimality verification** — via the Gateaux derivative and the General Equivalence Theorem (FIM-based criteria)
+- **Built-in plotting** — credible bands, corner plots, design allocation, animated posterior evolution, live dashboard
 
 ## Installation
 

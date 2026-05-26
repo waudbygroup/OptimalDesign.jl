@@ -86,6 +86,54 @@ If the maximum Gateaux derivative exceeds ``q``, the design is not optimal and t
 
 OptimalDesign.jl computes and plots the Gateaux derivative via `verify_optimality` and `plot_gateaux`.
 
+## Expected Information Gain (EIG)
+
+FIM-based criteria assume the posterior is approximately Gaussian near the current parameter estimate. This is a good approximation when the prior is tight or the model is nearly linear, but it breaks down for:
+
+- **broad priors** — the FIM is evaluated at particles spread across a wide region, but the average FIM can overestimate the true information gain when the model is nonlinear
+- **multi-modal models** — a periodic model has many parameter values that explain any single observation equally well (aliasing); the FIM cannot see this
+
+**Expected Information Gain (EIG)** scores a candidate ``x`` by the mutual information between the parameters ``\theta`` and the next observation ``y``:
+
+```math
+\text{EIG}(x) = \mathbb{E}_{\theta \sim \pi} \left[
+    \log \frac{p(y \mid \theta, x)}{\int p(y \mid \theta', x) \pi(\theta') \, d\theta'}
+\right]
+```
+
+This is estimated by **nested Monte Carlo** using ``M`` outer samples (over ``\theta``) and ``N`` inner samples (over the denominator):
+
+```math
+\widehat{\text{EIG}}(x) = \frac{1}{M} \sum_{m=1}^{M} \left[
+    \log p(y_m \mid \theta_m, x) - \log \frac{1}{N} \sum_{n=1}^{N} p(y_m \mid \theta_n, x)
+\right]
+```
+
+where ``y_m \sim p(\cdot \mid \theta_m, x)`` is a synthetic observation from the outer sample.
+
+For a `DeltaMethod` transformation built with `select(...)`, a **marginal-EIG** estimator is used: inner samples permute only the selected parameters while holding the nuisance parameters fixed at the outer value. This isolates the information about the parameters of interest.
+
+### EIG vs FIM-based criteria
+
+| Property | FIM (D/A/E) | EIG |
+|----------|:-----------:|:---:|
+| Exact for Gaussian linear models | ✓ | ✓ |
+| Handles broad priors | ~ | ✓ |
+| Handles multi-modal posteriors | ✗ | ✓ |
+| Supports batch weight optimisation (exchange algorithm) | ✓ | ✗ |
+| Computation cost | low | ``O(M \times N \times K)`` |
+| Gateaux / GET certificate | ✓ | ✗ |
+
+Because EIG is non-convex in design weights, the exchange algorithm is not available. Batch EIG designs use **greedy selection**: candidates are added one at a time, each time choosing the point that maximises the EIG score given what has already been selected.
+
+In OptimalDesign.jl, EIG is requested with:
+
+```julia
+criterion = EIGCriterion(outer_samples = 50, inner_samples = 50)
+```
+
+See the [EIG vs D-optimality](@ref) example for a worked comparison.
+
 ## Efficiency
 
 The **efficiency** of a design ``ξ_1`` relative to ``ξ_2`` is the ratio of their criterion values, raised to the power ``1/q``:

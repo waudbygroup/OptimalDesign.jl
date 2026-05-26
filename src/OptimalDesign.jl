@@ -14,7 +14,7 @@ import GLMakie
 import GaussianMixtures
 
 # Problem specification
-export DesignProblem, select,
+export DesignProblem, select, Identity,
        DCriterion, ACriterion, ECriterion, EIGCriterion
 
 # Posterior

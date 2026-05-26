@@ -73,6 +73,17 @@ The optimality criterion:
 | `DCriterion()` | maximise `log det(M)` | minimise volume of confidence ellipsoid |
 | `ACriterion()` | maximise `-tr(M⁻¹)` | minimise average variance |
 | `ECriterion()` | maximise `λ_min(M)` | minimise worst-case variance |
+| `EIGCriterion(outer_samples=50, inner_samples=50)` | maximise mutual information ``I(\theta; y \mid x)`` | fully Bayesian; handles broad or multi-modal priors |
+
+`EIGCriterion` estimates the Expected Information Gain via nested Monte Carlo rather than the
+Fisher Information Matrix. It is more expensive per candidate but correctly accounts for
+prior breadth and model nonlinearity. See the [EIG vs D-optimality](@ref) example for a
+head-to-head comparison.
+
+!!! note "EIG and the exchange algorithm"
+    The exchange algorithm (used for batch weight optimisation) is not available with
+    `EIGCriterion` because EIG is non-convex in design weights. Batch EIG designs use
+    greedy selection; adaptive EIG designs work exactly as with FIM-based criteria.
 
 ### `jacobian` (keyword, default: `nothing`)
 
