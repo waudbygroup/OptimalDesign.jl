@@ -126,12 +126,22 @@ The Gateaux derivative provides a formal check: it should touch the bound ``q`` 
 targeted parameters) at the design support points and lie below ``q`` everywhere else.
 
 ```@example selection
-opt_A = verify_optimality(prob_A, candidates, Particles(prob_A, 1000), ξ_A)
-plot_gateaux(opt_A)
+opt_all = verify_optimality(prob_all, candidates, Particles(prob_all, 1000), ξ_all)
+plot_gateaux(opt_all)
 ```
 
-The bound equals ``q = 1`` for all three single-parameter Ds designs. The flat maximum confirms
-the support point(s) are locally optimal.
+For the D-optimal design the bound is ``q = 3`` (all parameters). The two peaks sit exactly at
+the support points, confirming optimality.
+
+!!! note "Ds designs and singular FIMs"
+    `verify_optimality` inverts the *full* ``p \times p`` FIM over the design. For a
+    Ds design such as `select(:A)`, all measurements fall at very early times where the
+    decay factor ``\exp(-Rt) \approx 1`` for any ``R`` in the prior — the FIM has
+    essentially no information about ``R`` and is rank-deficient. This is the correct
+    physical outcome (the design deliberately ignores nuisance parameters), but it means
+    the Gateaux certificate is only well-defined when the design is informative about
+    *all* parameters, not just the targeted subset. See [Theory](@ref) for the full
+    Ds-optimality conditions.
 
 ## Running experiments
 
